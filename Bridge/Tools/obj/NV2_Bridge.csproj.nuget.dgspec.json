@@ -10,7 +10,7 @@
         "projectUniqueName": "E:\\NV_ENGINE\\Bridge\\Tools\\NV2_Bridge.csproj",
         "projectName": "NV2_Bridge",
         "projectPath": "E:\\NV_ENGINE\\Bridge\\Tools\\NV2_Bridge.csproj",
-        "packagesPath": "C:\\Users\\opiot\\.nuget\\packages\\",
+        "packagesPath": "C:\\Users\\opiot\\.nuget\\packages",
         "outputPath": "E:\\NV_ENGINE\\Bridge\\Tools\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [

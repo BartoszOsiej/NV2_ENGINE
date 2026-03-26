@@ -10,27 +10,25 @@
         "projectUniqueName": "E:\\NV_ENGINE\\Bridge\\Tools\\Slicer\\Slicer.csproj",
         "projectName": "Slicer",
         "projectPath": "E:\\NV_ENGINE\\Bridge\\Tools\\Slicer\\Slicer.csproj",
-        "packagesPath": "C:\\Users\\opiot\\.nuget\\packages\\",
+        "packagesPath": "C:\\Users\\opiot\\.nuget\\packages",
         "outputPath": "E:\\NV_ENGINE\\Bridge\\Tools\\Slicer\\obj\\",
         "projectStyle": "PackageReference",
-        "fallbackFolders": [
-          "G:\\Nowy folder (3)\\NuGetPackages"
-        ],
         "configFilePaths": [
+          "E:\\NV_ENGINE\\Bridge\\Tools\\Slicer\\NuGet.Config",
           "C:\\Users\\opiot\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
-          "net9.0"
+          "net8.0"
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
-          "net9.0": {
-            "targetAlias": "net9.0",
+          "net8.0": {
+            "targetAlias": "net8.0",
             "projectReferences": {}
           }
         },
@@ -47,16 +45,12 @@
         "SdkAnalysisLevel": "9.0.200"
       },
       "frameworks": {
-        "net9.0": {
-          "targetAlias": "net9.0",
+        "net8.0": {
+          "targetAlias": "net8.0",
           "dependencies": {
-            "Newtonsoft.Json": {
-              "target": "Package",
-              "version": "[13.0.4, )"
-            },
             "System.Drawing.Common": {
               "target": "Package",
-              "version": "[10.0.5, )"
+              "version": "[8.0.0, )"
             }
           },
           "imports": [

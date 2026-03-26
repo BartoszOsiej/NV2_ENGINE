@@ -128,7 +128,7 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\opiot\\.nuget\\packages\\": {},
+    "C:\\Users\\opiot\\.nuget\\packages": {},
     "G:\\Nowy folder (3)\\NuGetPackages": {}
   },
   "project": {
@@ -137,7 +137,7 @@
       "projectUniqueName": "E:\\NV_ENGINE\\Bridge\\Tools\\NV2_Bridge.csproj",
       "projectName": "NV2_Bridge",
       "projectPath": "E:\\NV_ENGINE\\Bridge\\Tools\\NV2_Bridge.csproj",
-      "packagesPath": "C:\\Users\\opiot\\.nuget\\packages\\",
+      "packagesPath": "C:\\Users\\opiot\\.nuget\\packages",
       "outputPath": "E:\\NV_ENGINE\\Bridge\\Tools\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
@@ -201,5 +201,19 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.204/PortableRuntimeIdentifierGraph.json"
       }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "The local source 'G:\\Nowy folder (3)\\NuGetPackages' doesn't exist.",
+      "libraryId": "System.Drawing.Common"
+    },
+    {
+      "code": "NU1301",
+      "level": "Error",
+      "message": "The local source 'G:\\Nowy folder (3)\\NuGetPackages' doesn't exist.",
+      "libraryId": "Microsoft.Win32.SystemEvents"
+    }
+  ]
 }

@@ -6,9 +6,7 @@ pub const CHUNK_H: usize = 256;
 pub const CHUNK_D: usize = 16;
 
 pub struct Chunk {
-    /// blocks[x][y][z]
     pub blocks: Box<[[[BlockType; CHUNK_D]; CHUNK_H]; CHUNK_W]>,
-    pub dirty: bool,
 }
 
 impl Chunk {
@@ -31,22 +29,11 @@ impl Chunk {
             }
         }
 
-        Self { blocks, dirty: true }
+        Self { blocks }
     }
 
     #[inline]
     pub fn get(&self, x: usize, y: usize, z: usize) -> BlockType {
         self.blocks[x][y][z]
-    }
-
-    /// Safe neighbour-aware get (returns Air for out-of-bounds y)
-    #[inline]
-    pub fn get_safe(&self, x: i32, y: i32, z: i32) -> Option<BlockType> {
-        if x < 0 || x >= CHUNK_W as i32
-        || y < 0 || y >= CHUNK_H as i32
-        || z < 0 || z >= CHUNK_D as i32 {
-            return None; // caller must query neighbour chunk
-        }
-        Some(self.blocks[x as usize][y as usize][z as usize])
     }
 }

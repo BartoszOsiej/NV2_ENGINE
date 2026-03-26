@@ -1,4 +1,11 @@
-/// Every block type in the game.
+use crate::renderer::texture_atlas::{
+    TileUV,
+    tile_grass_top, tile_grass_side, tile_dirt, tile_stone,
+    tile_sand, tile_gravel, tile_snow_top, tile_snow_side,
+    tile_water,
+    tile_coal_ore, tile_gold_ore, tile_diamond_ore,
+};
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum BlockType {
@@ -11,6 +18,9 @@ pub enum BlockType {
     SnowGrass,
     Snow,
     Water,
+    CoalOre,
+    GoldOre,
+    DiamondOre,
 }
 
 impl BlockType {
@@ -18,33 +28,37 @@ impl BlockType {
         !matches!(self, BlockType::Air | BlockType::Water)
     }
 
-    /// Returns (atlas_col, atlas_row) for each face.
-    /// Face order: Top, Bottom, Front, Back, Left, Right
-    pub fn face_uvs(self) -> [(u32, u32); 6] {
+    /// Returns a TileUV per face.
+    /// Face order: Top, Bottom, Front, Back, Right, Left
+    pub fn face_uvs(self) -> [TileUV; 6] {
         match self {
             BlockType::Grass => [
-                (0, 0), // Top  → grass top
-                (1, 0), // Bot  → dirt
-                (2, 0), // Front→ grass side
-                (2, 0),
-                (2, 0),
-                (2, 0),
+                tile_grass_top(),   // top
+                tile_dirt(),        // bottom
+                tile_grass_side(),  // front
+                tile_grass_side(),  // back
+                tile_grass_side(),  // right
+                tile_grass_side(),  // left
             ],
-            BlockType::Dirt => [(1, 0); 6],
-            BlockType::Stone => [(3, 0); 6],
-            BlockType::Sand => [(0, 1); 6],
-            BlockType::Gravel => [(1, 1); 6],
+            BlockType::Dirt     => [tile_dirt();        6],
+            BlockType::Stone    => [tile_stone();       6],
+            BlockType::Sand     => [tile_sand();        6],
+            BlockType::Gravel   => [tile_gravel();      6],
+            BlockType::Snow     => [tile_snow_top();    6],
             BlockType::SnowGrass => [
-                (0, 2), // top  → snow
-                (1, 0), // bot  → dirt
-                (3, 1), // side → snowy grass side
-                (3, 1),
-                (3, 1),
-                (3, 1),
+                tile_snow_top(),
+                tile_dirt(),
+                tile_snow_side(),
+                tile_snow_side(),
+                tile_snow_side(),
+                tile_snow_side(),
             ],
-            BlockType::Snow => [(0, 2); 6],
-            BlockType::Water => [(2, 1); 6],
-            BlockType::Air => [(0, 0); 6],
+            BlockType::CoalOre    => [tile_coal_ore();    6],
+            BlockType::GoldOre    => [tile_gold_ore();    6],
+            BlockType::DiamondOre => [tile_diamond_ore(); 6],
+            // Water and Air should never be meshed but need a value
+            BlockType::Water => [tile_water(); 6],
+            BlockType::Air => [tile_dirt(); 6],
         }
     }
 }
