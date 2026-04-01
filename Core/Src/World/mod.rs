@@ -4,6 +4,7 @@ pub mod biomes;
 pub mod generator;
 pub mod raycast;
 pub mod palette;
+pub mod liquid;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -186,78 +187,46 @@ impl World {
         self.generator.surface_height(wx, wz)
     }
 
-    /// Simple water simulation step. This performs a single-pass cellular update
-    /// on loaded chunks: water flows down if possible, otherwise attempts to
-    /// move laterally into adjacent air cells.
+    /// Find the nearest land spawn point to world origin (0, 0).
     ///
-    /// Source blocks (water_meta bit 3 = 0x08) represent permanent water sources
-    /// (naturally generated rivers, lakes). They spread to neighbours but are never
-    /// consumed: the source voxel stays, only a copy flows into the empty space.
-    /// Flow blocks (bit 3 = 0) are consumed when they move.
-    pub fn simulate_water(&mut self) {
-        let mut changes: Vec<(i32, i32, i32, BlockType)> = Vec::new();
-        let mut meta_changes: Vec<(i32, i32, i32, u8)> = Vec::new();
+    /// Spirals outward in 8-block increments until a solid, above-sea-level, non-river
+    /// surface is found. Falls back to Y=80 if no land is found within 512 blocks.
+    pub fn find_spawn_point(&self) -> (f32, f32, f32) {
+        // Check origin first
+        if self.generator.is_land_surface(0, 0) {
+            let sy = self.generator.surface_height(0, 0);
+            return (0.5, sy as f32 + 1.8, 0.5);
+        }
 
-        // Snapshot keys to avoid borrowing self.chunks while mutating
-        let chunk_keys: Vec<(i32, i32)> = self.chunks.keys().cloned().collect();
-
-        for (cx, cz) in chunk_keys {
-            if let Some(chunk) = self.chunks.get(&(cx, cz)) {
-                for x in 0..CHUNK_W {
-                    for z in 0..CHUNK_D {
-                        for y in 0..crate::world::chunk::CHUNK_H {
-                            let bt = *chunk.get(x, y, z);
-                            if bt != BlockType::Water { continue; }
-
-                            let wx = cx * CHUNK_W as i32 + x as i32;
-                            let wy = y as i32;
-                            let wz = cz * CHUNK_D as i32 + z as i32;
-
-                            let meta = self.get_water_meta(wx, wy, wz);
-                            let is_source = (meta & 0x08) != 0;
-
-                            // Try to flow down
-                            if wy > 0 && self.get_block(wx, wy - 1, wz) == BlockType::Air {
-                                changes.push((wx, wy - 1, wz, BlockType::Water));
-                                meta_changes.push((wx, wy - 1, wz, 0x07)); // full flow block
-                                if !is_source {
-                                    // Flow blocks are consumed; source blocks stay
-                                    changes.push((wx, wy, wz, BlockType::Air));
-                                    meta_changes.push((wx, wy, wz, 0x00));
-                                }
-                                continue;
-                            }
-
-                            // Try to flow sideways into air cells (cardinal directions)
-                            let dirs = [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)];
-                            for (dx, dz) in dirs.iter() {
-                                let nx = wx + dx;
-                                let nz = wz + dz;
-                                if self.get_block(nx, wy, nz) == BlockType::Air {
-                                    if self.get_block(nx, wy - 1, nz) != BlockType::Air || wy == 0 {
-                                        changes.push((nx, wy, nz, BlockType::Water));
-                                        meta_changes.push((nx, wy, nz, 0x07));
-                                        if !is_source {
-                                            changes.push((wx, wy, wz, BlockType::Air));
-                                            meta_changes.push((wx, wy, wz, 0x00));
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+        let step = 8i32;
+        for ring in 1i32..=64 {          // max radius = 64 * 8 = 512 blocks
+            let d = ring * step;
+            // Walk the perimeter of a square ring at Manhattan distance `d`
+            let mut pts: Vec<(i32, i32)> = Vec::new();
+            for i in -ring..=ring {
+                pts.push((i * step, -d));
+                pts.push((i * step,  d));
+            }
+            for i in (-ring + 1)..ring {
+                pts.push((-d, i * step));
+                pts.push(( d, i * step));
+            }
+            for (wx, wz) in pts {
+                if self.generator.is_land_surface(wx, wz) {
+                    let sy = self.generator.surface_height(wx, wz);
+                    return (wx as f32 + 0.5, sy as f32 + 1.8, wz as f32 + 0.5);
                 }
             }
         }
 
-        // Apply all changes
-        for (wx, wy, wz, block) in changes {
-            self.set_block(wx, wy, wz, block);
-        }
-        for (wx, wy, wz, meta) in meta_changes {
-            self.set_water_meta(wx, wy, wz, meta);
-        }
+        // Fallback: above the sea level at origin
+        (0.5, 80.0, 0.5)
+    }
+
+    /// Liquid simulation tick — delegates to the dedicated liquid module.
+    /// Called at a throttled rate (~0.5 s) by the renderer update loop.
+    pub fn simulate_water(&mut self) {
+        liquid::simulate_step(self);
     }
 
     /// Get per-voxel water metadata (0 if none)

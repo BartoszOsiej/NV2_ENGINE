@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("NV2_Bridge")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5e68215710baa001da6bd684049285782a7fca31")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8886d0b449571cb89cb4a992db123ec50d9188fa")]
 [assembly: System.Reflection.AssemblyProductAttribute("NV2_Bridge")]
 [assembly: System.Reflection.AssemblyTitleAttribute("NV2_Bridge")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

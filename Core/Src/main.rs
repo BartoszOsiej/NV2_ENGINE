@@ -111,8 +111,8 @@ impl App {
         self.update_window_title();
         // If renderer is initialized, move the camera to the surface of the new world
         if let Some(state) = self.state.as_mut() {
-            let spawn_y = self.world.surface_height(0, 0) as f32 + 1.8;
-            state.camera.position = Vector3::new(0.0, spawn_y, 0.0);
+            let (sx, sy, sz) = self.world.find_spawn_point();
+            state.camera.position = Vector3::new(sx, sy, sz);
             state.camera.velocity = Vector3::new(0.0, 0.0, 0.0);
             state.camera.on_ground = true;
             state.camera_uniform.update_view_proj(&state.camera, state.config.width as f32 / state.config.height as f32);
@@ -191,8 +191,8 @@ impl ApplicationHandler for App {
         // If we are resuming into an already-playing session (e.g. loaded save),
         // make sure the renderer camera is positioned on the world's surface.
         if self.mode == AppMode::Playing {
-            let spawn_y = self.world.surface_height(0, 0) as f32 + 1.8;
-            state.camera.position = Vector3::new(0.0, spawn_y, 0.0);
+            let (sx, sy, sz) = self.world.find_spawn_point();
+            state.camera.position = Vector3::new(sx, sy, sz);
             state.camera.velocity = Vector3::new(0.0, 0.0, 0.0);
             state.camera.on_ground = true;
             state.camera_uniform.update_view_proj(&state.camera, state.config.width as f32 / state.config.height as f32);

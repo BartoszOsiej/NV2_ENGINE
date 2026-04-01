@@ -7,7 +7,7 @@ pub const CHUNK_D: usize = 16;
 
 pub struct Chunk {
     pub blocks: Box<[[[BlockType; CHUNK_D]; CHUNK_H]; CHUNK_W]>,
-    // Per-voxel water metadata: bits 0-2 = level (0-7), bit 3 = source flag, bits 4-6 reserved for flow dir
+    // Per-voxel water metadata: 0 = no liquid, 1-7 = flowing (level), 8 = permanent source.
     pub water_meta: Box<[[[u8; CHUNK_D]; CHUNK_H]; CHUNK_W]>,
     pub is_dirty: bool,
 }
@@ -28,13 +28,12 @@ impl Chunk {
                 for y in 0..CHUNK_H {
                     blocks[x][y][z] = column[y];
                 }
-                // Initialize water metadata for any water blocks placed by generator.
-                // Mark every generated water block as a source block (bit 3 = 0x08) at
-                // full level. Source blocks persist through simulate_water — they spread
-                // without draining, so rivers and lakes remain stable over time.
+                // Mark every generated water block as a permanent source (level 8).
+                // Source blocks spread without draining, so generated rivers, lakes, and
+                // oceans remain stable and replenish any adjacent flowing water.
                 for y in 0..CHUNK_H {
                     if blocks[x][y][z] == BlockType::Water {
-                        water_meta[x][y][z] = 0x0F; // source (bit 3) + full level (bits 0-2 = 7)
+                        water_meta[x][y][z] = 8; // source block
                     }
                 }
             }
@@ -74,17 +73,16 @@ impl Chunk {
         }
     }
 
+    /// Return the liquid level at local coordinates (0 = none, 1-7 = flow, 8 = source).
     #[inline]
     pub fn water_level(&self, x: usize, y: usize, z: usize) -> u8 {
-        self.water_meta[x][y][z] & 0x07
+        self.water_meta[x][y][z].min(8)
     }
 
+    /// Set the liquid level (0-8) at local coordinates.
     #[inline]
     pub fn set_water_level(&mut self, x: usize, y: usize, z: usize, level: u8) {
-        let level = level.min(7) & 0x07;
-        let mut m = self.water_meta[x][y][z] & !0x07;
-        m |= level;
-        self.water_meta[x][y][z] = m;
+        self.water_meta[x][y][z] = level.min(8);
         self.is_dirty = true;
     }
 

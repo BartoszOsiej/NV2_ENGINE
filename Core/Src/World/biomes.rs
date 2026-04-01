@@ -1,6 +1,9 @@
 use noise::{NoiseFn, Perlin};
 use super::block::BlockType;
 
+/// Y level below which terrain is flooded with water.
+pub const SEA_LEVEL: usize = 44;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Biome {
     Plains,
@@ -13,6 +16,14 @@ pub enum Biome {
     Swamp,
     River,
     Glade,
+    /// Boreal cold forest (spruce-like)
+    Taiga,
+    /// Hot, flat, dry grassland
+    Savanna,
+    /// Deep open sea — surface well below SEA_LEVEL
+    Ocean,
+    /// Cold, flat, barren permafrost
+    Tundra,
 }
 
 /// Advanced biome generator with Minecraft-style terrain features
@@ -54,13 +65,12 @@ impl BiomeGenerator {
 
     /// Determine biome at world coordinates based on temperature and humidity
     pub fn get_biome(&self, wx: i32, wz: i32) -> Biome {
-        // Smoothly classify biomes using temperature/humidity/elevation features
         let nx = wx as f64 * 0.0025;
         let nz = wz as f64 * 0.0025;
 
         let temp = self.biome_noise.get([nx, nz]);
         let humidity = self.biome_noise.get([nx + 100.0, nz + 100.0]);
-        let elev = (self.base_height(wx, wz) / 1.875 + 1.0) * 0.5; // normalized 0..1
+        let elev = (self.base_height(wx, wz) / 1.875 + 1.0) * 0.5;
 
         // Rivers take absolute precedence when the river mask is near zero
         let rnoise = self.river_noise.get([wx as f64 * 0.0015, wz as f64 * 0.0015]);
@@ -68,28 +78,29 @@ impl BiomeGenerator {
             return Biome::River;
         }
 
-        // Build a small feature vector and pick the closest biome center
+        // Deep ocean: very low elevation
+        if elev < 0.18 {
+            return Biome::Ocean;
+        }
+
+        // Build feature vector and find nearest biome centre
         let feats = (temp, humidity, elev);
         let mut best = Biome::Plains;
-        let mut best_score = std::f64::INFINITY;
+        let mut best_score = f64::INFINITY;
 
         for (b, cent) in Self::biome_feature_centers().iter() {
-            let dx = feats.0 - cent.0;
-            let dy = feats.1 - cent.1;
-            let dz = feats.2 - cent.2;
-            let dist2 = dx*dx + dy*dy + dz*dz;
-            if dist2 < best_score {
-                best_score = dist2;
-                best = *b;
-            }
+            let d2 = (feats.0 - cent.0).powi(2)
+                   + (feats.1 - cent.1).powi(2)
+                   + (feats.2 - cent.2).powi(2);
+            if d2 < best_score { best_score = d2; best = *b; }
         }
 
-        // A few heuristic overrides for special cases
-        if feats.2 > 0.85 {
-            if feats.0 < -0.15 { return Biome::Snowy; }
-            return Biome::Mountains;
+        // Heuristic overrides
+        if feats.2 > 0.82 {
+            return if feats.0 < -0.10 { Biome::Snowy } else { Biome::Mountains };
         }
-        if feats.1 > 0.55 && feats.2 < 0.2 { return Biome::Swamp; }
+        if feats.1 > 0.55 && feats.2 < 0.25 { return Biome::Swamp; }
+        if feats.0 < -0.55 && feats.1 < 0.10 { return Biome::Tundra; }
 
         best
     }
@@ -97,16 +108,20 @@ impl BiomeGenerator {
     /// Returns a list of (Biome, feature_center) where each center is (temp, humidity, elev)
     fn biome_feature_centers() -> Vec<(Biome, (f64, f64, f64))> {
         vec![
-            (Biome::Plains, (0.0, 0.0, 0.45)),
-            (Biome::ForestDense, (0.1, 0.55, 0.50)),
-            (Biome::ForestSparse, (0.05, 0.30, 0.50)),
-            (Biome::Mountains, (-0.2, 0.0, 0.85)),
-            (Biome::Beach, (0.4, 0.0, 0.12)),
-            (Biome::Desert, (0.6, -0.6, 0.35)),
-            (Biome::Snowy, (-0.9, 0.0, 0.95)),
-            (Biome::Swamp, (0.0, 0.8, 0.30)),
-            (Biome::River, (0.0, 0.6, 0.30)),
-            (Biome::Glade, (0.1, 0.4, 0.48)),
+            (Biome::Plains,       ( 0.0,  0.0,  0.47)),
+            (Biome::ForestDense,  ( 0.1,  0.55, 0.52)),
+            (Biome::ForestSparse, ( 0.05, 0.30, 0.50)),
+            (Biome::Mountains,    (-0.2,  0.0,  0.85)),
+            (Biome::Beach,        ( 0.4,  0.0,  0.22)),
+            (Biome::Desert,       ( 0.6, -0.6,  0.38)),
+            (Biome::Snowy,        (-0.9,  0.0,  0.94)),
+            (Biome::Swamp,        ( 0.0,  0.8,  0.28)),
+            (Biome::River,        ( 0.0,  0.6,  0.28)),
+            (Biome::Glade,        ( 0.1,  0.4,  0.48)),
+            (Biome::Taiga,        (-0.5,  0.3,  0.55)),
+            (Biome::Savanna,      ( 0.5, -0.4,  0.46)),
+            (Biome::Ocean,        (-0.1,  0.3,  0.14)),
+            (Biome::Tundra,       (-0.7, -0.2,  0.45)),
         ]
     }
 
@@ -127,28 +142,29 @@ impl BiomeGenerator {
 
     /// Get surface height with biome-specific terrain variations
     pub fn surface_height(&self, wx: i32, wz: i32) -> u32 {
-        // Use weighted biome-aware terrain parameters to produce smooth transitions
         let base = self.base_height(wx, wz);
         let detail = self.detail_noise.get([wx as f64 * 0.02, wz as f64 * 0.02]);
-        let normalized = (base / 1.875 + 1.0) * 0.5;
-        let mut height = 48.0 + normalized * 28.0; // fallback
+        let n = (base / 1.875 + 1.0) * 0.5; // normalised 0..1
 
-        match self.get_biome(wx, wz) {
-            Biome::Plains => height = 45.0 + normalized * 25.0,
-            Biome::ForestDense => height = 52.0 + normalized * 28.0,
-            Biome::ForestSparse => height = 50.0 + normalized * 26.0,
-            Biome::Mountains => height = 60.0 + normalized * 80.0,
-            Biome::Beach => height = 48.0 + normalized * 4.0,
-            Biome::Desert => height = 50.0 + normalized * 20.0,
-            Biome::Snowy => height = 55.0 + normalized * 35.0,
-            Biome::Swamp => height = 44.0 + normalized * 10.0,
-            Biome::River => height = 40.0 + normalized * 6.0,
-            Biome::Glade => height = 50.0 + normalized * 25.0,
-        }
+        let height = match self.get_biome(wx, wz) {
+            Biome::Plains       => 47.0 + n * 24.0,  // 47-71
+            Biome::ForestDense  => 50.0 + n * 28.0,  // 50-78
+            Biome::ForestSparse => 48.0 + n * 26.0,  // 48-74
+            Biome::Mountains    => 60.0 + n * 80.0,  // 60-140
+            Biome::Beach        => 38.0 + n * 7.0,   // 38-45  (straddles SEA_LEVEL=44)
+            Biome::Desert       => 48.0 + n * 22.0,  // 48-70
+            Biome::Snowy        => 55.0 + n * 35.0,  // 55-90
+            Biome::Swamp        => 40.0 + n * 12.0,  // 40-52  (partially below SEA)
+            Biome::River        => 37.0 + n * 7.0,   // 37-44  (below to at SEA)
+            Biome::Glade        => 48.0 + n * 25.0,  // 48-73
+            Biome::Taiga        => 52.0 + n * 30.0,  // 52-82
+            Biome::Savanna      => 46.0 + n * 22.0,  // 46-68
+            Biome::Ocean        => 20.0 + n * 16.0,  // 20-36  (all below SEA)
+            Biome::Tundra       => 44.0 + n * 8.0,   // 44-52  (flat, near SEA)
+        };
 
-        // Apply local detail variation
-        let height_variation = 0.92 + (detail + 1.0) * 0.04; // small ±4% variation
-        (height * height_variation) as u32
+        let variation = 0.92 + (detail + 1.0) * 0.04;
+        ((height * variation) as u32).max(2).min(254)
     }
 
     /// Check if there's a cave at this position using 3D Perlin noise
@@ -196,20 +212,12 @@ impl BiomeGenerator {
 
     /// Check if there should be a tree at this location
     fn should_place_tree(&self, wx: i32, wz: i32, biome: Biome) -> bool {
-        // No trees in non-forest biomes or in rivers/glades
+        let v = self.tree_noise.get([wx as f64 * 0.03, wz as f64 * 0.03]);
         match biome {
-            Biome::ForestDense | Biome::ForestSparse => {}
-            _ => return false,
-        }
-
-        let nx = wx as f64 * 0.03;
-        let nz = wz as f64 * 0.03;
-        let tree_val = self.tree_noise.get([nx, nz]);
-
-        // Dense forests more permissive
-        match biome {
-            Biome::ForestDense => tree_val > 0.25,
-            Biome::ForestSparse => tree_val > 0.55,
+            Biome::ForestDense  => v > 0.20,
+            Biome::ForestSparse => v > 0.50,
+            Biome::Taiga        => v > 0.45,
+            Biome::Glade        => v > 0.72,
             _ => false,
         }
     }
@@ -245,138 +253,141 @@ impl BiomeGenerator {
         }
     }
 
-    /// Check if position should have grass on top of grass/dirt block
-    fn should_have_grass_layer(&self, biome: Biome) -> bool {
-        matches!(biome, Biome::Plains | Biome::ForestDense | Biome::ForestSparse | Biome::Snowy | Biome::Glade)
-    }
-
-    /// Fill a vertical column with blocks based on biome and features
+    /// Fill a vertical column with blocks based on biome and features.
+    /// Columns below SEA_LEVEL are flooded with water.
     pub fn fill_column(&self, wx: i32, wz: i32, column: &mut [BlockType; 256]) {
-        let mut surface = self.surface_height(wx, wz) as usize;
-        let mut biome = self.get_biome(wx, wz);
+        let base_surface = self.surface_height(wx, wz) as usize;
+        let base_biome   = self.get_biome(wx, wz);
 
-        // River carving: lower the surface around river centers
+        // River carving: lower the bed near river centrelines
         let rnoise = self.river_noise.get([wx as f64 * 0.0015, wz as f64 * 0.0015]);
-        let river_abs = rnoise.abs();
-        let is_river = river_abs < 0.018;
-        if is_river {
-            // Lower the bed and mark as river biome
-            let carve = 3 + ((1.0 - river_abs / 0.018) * 4.0) as usize; // 3..7
-            surface = surface.saturating_sub(carve);
-            biome = Biome::River;
-        }
+        let is_river = rnoise.abs() < 0.018;
+        let (surface, biome) = if is_river {
+            let carve = 3 + ((1.0 - rnoise.abs() / 0.018) * 4.0) as usize;
+            (base_surface.saturating_sub(carve), Biome::River)
+        } else {
+            (base_surface, base_biome)
+        };
 
-        // Bedrock layer
+        // ── Bedrock ──────────────────────────────────────────────────────────
         column[0] = BlockType::Bedrock;
 
-        // Underground and cave generation
+        // ── Underground fill ─────────────────────────────────────────────────
         for y in 1..surface {
-            // Check for caves first (higher priority)
             if self.is_cave(wx, y as i32, wz, surface as u32) {
-                column[y] = BlockType::Air;
+                // leave Air in caves
                 continue;
             }
-
-            // Check for ores
             if let Some(ore) = self.get_ore_at(y as i32, wx, wz, surface as u32) {
                 column[y] = ore;
                 continue;
             }
-
-            // Regular block layering
             let depth = surface - y;
-            let block = if depth < 1 {
-                // This shouldn't happen, but safety check
-                BlockType::Stone
-            } else if depth < 4 {
-                // Top soil layer
-                match biome {
-                    Biome::Desert => BlockType::Sand,
-                    Biome::Beach => BlockType::Sand,
-                    Biome::Swamp => BlockType::Dirt,
-                    Biome::River => BlockType::Dirt,
+            column[y] = match depth {
+                1..=3 => match biome {
+                    Biome::Desert | Biome::Beach | Biome::Ocean => BlockType::Sand,
                     _ => BlockType::Dirt,
-                }
-            } else if depth < 20 {
-                // Mid soil layer
-                match biome {
-                    Biome::Desert => BlockType::Sand,
-                    Biome::Beach => BlockType::Sand,
+                },
+                4..=19 => match biome {
+                    Biome::Desert | Biome::Beach | Biome::Ocean => BlockType::Sand,
                     _ => BlockType::Dirt,
-                }
-            } else {
-                // Deep stone layer
-                BlockType::Stone
+                },
+                _ => BlockType::Stone,
             };
-            column[y] = block;
         }
 
-        // Surface layer based on biome
-        if surface < 256 {
-            match biome {
-                Biome::Plains => column[surface] = BlockType::Grass,
-                Biome::ForestDense | Biome::ForestSparse => column[surface] = BlockType::Grass,
-                Biome::Mountains => {
-                    if surface > 100 {
-                        column[surface] = BlockType::Snow;
-                    } else {
-                        column[surface] = BlockType::Stone;
-                    }
-                }
-                Biome::Beach => column[surface] = BlockType::Sand,
-                Biome::Desert => column[surface] = BlockType::Sand,
-                Biome::Snowy => column[surface] = BlockType::Snow,
-                Biome::Swamp => column[surface] = BlockType::Dirt,
-                Biome::River => column[surface] = BlockType::Water,
-                Biome::Glade => column[surface] = BlockType::Grass,
+        // Deepslate + Tuff in the lowest 30 blocks
+        for y in 1..surface.min(30) {
+            if column[y] == BlockType::Stone {
+                let v = (self.ore_noise.get([wx as f64 * 0.01, y as f64 * 0.01, wz as f64 * 0.01]) + 1.0) * 0.5;
+                column[y] = if y < 10 { BlockType::Deepslate }
+                            else if v > 0.5 { BlockType::Tuff }
+                            else { BlockType::Deepslate };
             }
         }
 
-        // Place trees in forests (avoid glades and river tiles)
-        if matches!(biome, Biome::ForestDense | Biome::ForestSparse) && self.should_place_tree(wx, wz, biome) && surface > 0 && surface < 250 {
+        // ── Surface block ─────────────────────────────────────────────────────
+        if surface < 256 {
+            column[surface] = match biome {
+                Biome::Plains | Biome::Glade | Biome::Savanna         => BlockType::Grass,
+                Biome::ForestDense | Biome::ForestSparse              => BlockType::Grass,
+                Biome::Taiga   => if surface > 90 { BlockType::Snow } else { BlockType::Grass },
+                Biome::Mountains => if surface > 100 { BlockType::Snow } else { BlockType::Stone },
+                Biome::Beach | Biome::Ocean => BlockType::Sand,
+                Biome::Desert  => BlockType::Sand,
+                Biome::Snowy | Biome::Tundra => BlockType::Snow,
+                Biome::Swamp   => BlockType::Dirt,
+                Biome::River   => BlockType::Water,
+            };
+        }
+
+        // ── Sea-level flooding ────────────────────────────────────────────────
+        if surface < SEA_LEVEL {
+            // Replace dry surface with appropriate underwater bed material
+            if surface < 256 && column[surface] != BlockType::Water {
+                column[surface] = match biome {
+                    Biome::Desert | Biome::Beach | Biome::Ocean => BlockType::Sand,
+                    _ => BlockType::Gravel,
+                };
+            }
+            // Water column from surface+1 up to SEA_LEVEL
+            for y in (surface + 1)..=SEA_LEVEL {
+                if y < 256 { column[y] = BlockType::Water; }
+            }
+        }
+
+        // ── Trees (above-sea-level columns only) ──────────────────────────────
+        if surface >= SEA_LEVEL && surface < 250 && self.should_place_tree(wx, wz, biome) {
             self.place_tree(wx, surface as i32, wz, column);
         }
     }
 
-    /// Ambient color and multiplier for lighting at given world position
+    /// Returns true if (wx, wz) is solid, walkable land above sea level.
+    pub fn is_land_surface(&self, wx: i32, wz: i32) -> bool {
+        let surf  = self.surface_height(wx, wz) as usize;
+        let biome = self.get_biome(wx, wz);
+        surf > SEA_LEVEL && !matches!(biome, Biome::River | Biome::Ocean)
+    }
+
+    /// Ambient colour and multiplier for the sky-light at world position.
     pub fn ambient_at(&self, wx: i32, wz: i32) -> [f32; 4] {
-        // Blend ambient values from nearby biome centers for smooth transitions
         let nx = wx as f64 * 0.0025;
         let nz = wz as f64 * 0.0025;
-        let temp = self.biome_noise.get([nx, nz]);
+        let temp     = self.biome_noise.get([nx, nz]);
         let humidity = self.biome_noise.get([nx + 100.0, nz + 100.0]);
-        let elev = (self.base_height(wx, wz) / 1.875 + 1.0) * 0.5;
+        let elev     = (self.base_height(wx, wz) / 1.875 + 1.0) * 0.5;
 
-        // Compute weights across biome centers
-        let mut accum = [0.0f64; 4];
-        let centers = Self::biome_feature_centers();
+        let mut accum  = [0.0f64; 4];
         let sigma = 0.25;
         let mut total_w = 0.0;
-        for (b, cent) in centers.iter() {
-            let dx = temp - cent.0;
-            let dy = humidity - cent.1;
-            let dz = elev - cent.2;
-            let d2 = dx*dx + dy*dy + dz*dz;
+        for (b, cent) in Self::biome_feature_centers().iter() {
+            let d2 = (temp - cent.0).powi(2) + (humidity - cent.1).powi(2) + (elev - cent.2).powi(2);
             let w = (-d2 / (2.0 * sigma * sigma)).exp();
             total_w += w;
-            let amb = match b {
-                Biome::Plains => [0.95, 1.00, 0.90, 0.95],
-                Biome::ForestDense => [0.80, 0.95, 0.75, 0.85],
+            let amb: [f64; 4] = match b {
+                Biome::Plains       => [0.95, 1.00, 0.90, 0.95],
+                Biome::ForestDense  => [0.80, 0.95, 0.75, 0.85],
                 Biome::ForestSparse => [0.90, 1.00, 0.88, 0.95],
-                Biome::Mountains => [0.92, 0.98, 1.00, 1.0],
-                Biome::Snowy => [1.05, 1.05, 1.02, 1.05],
-                Biome::Beach => [1.02, 0.98, 0.90, 0.98],
-                Biome::Desert => [1.05, 0.95, 0.82, 1.0],
-                Biome::Swamp => [0.60, 0.75, 0.55, 0.75],
-                Biome::River => [0.78, 0.90, 1.05, 0.85],
-                Biome::Glade => [0.98, 1.05, 0.95, 1.05],
+                Biome::Mountains    => [0.92, 0.98, 1.00, 1.00],
+                Biome::Snowy        => [1.05, 1.05, 1.02, 1.05],
+                Biome::Beach        => [1.02, 0.98, 0.90, 0.98],
+                Biome::Desert       => [1.05, 0.95, 0.82, 1.00],
+                Biome::Swamp        => [0.60, 0.75, 0.55, 0.75],
+                Biome::River        => [0.78, 0.90, 1.05, 0.85],
+                Biome::Glade        => [0.98, 1.05, 0.95, 1.05],
+                Biome::Taiga        => [0.78, 0.90, 0.98, 0.88],
+                Biome::Savanna      => [1.00, 0.90, 0.75, 1.00],
+                Biome::Ocean        => [0.65, 0.80, 1.10, 0.80],
+                Biome::Tundra       => [0.95, 0.98, 1.05, 0.98],
             };
-            accum[0] += amb[0] as f64 * w;
-            accum[1] += amb[1] as f64 * w;
-            accum[2] += amb[2] as f64 * w;
-            accum[3] += amb[3] as f64 * w;
+            for i in 0..4 { accum[i] += amb[i] * w; }
         }
-        if total_w <= 0.0 { return [1.0,1.0,1.0,1.0]; }
-        [ (accum[0]/total_w) as f32, (accum[1]/total_w) as f32, (accum[2]/total_w) as f32, (accum[3]/total_w) as f32 ]
+        if total_w <= 0.0 { return [1.0, 1.0, 1.0, 1.0]; }
+        [
+            (accum[0] / total_w) as f32,
+            (accum[1] / total_w) as f32,
+            (accum[2] / total_w) as f32,
+            (accum[3] / total_w) as f32,
+        ]
     }
 }

@@ -21,33 +21,41 @@ impl AtlasTexture {
             Path::new("../../../Assets/Atlas/terrain.png"),
         ];
 
-        for atlas_path in atlas_paths {
-            if let Ok(img) = image::open(atlas_path) {
-                // Normalize any external atlas to the expected atlas size
-                // so UVs/Tile indices remain consistent with TileUV constants.
-                let rgba = img.to_rgba8();
-                let (w, h) = img.dimensions();
-                let atlas_img = if w != 512 || h != 320 {
-                    // Resize to 512x320 using nearest to keep pixel-art crisp
-                    let dyn_img = image::DynamicImage::ImageRgba8(rgba);
-                    image::imageops::resize(&dyn_img, 512, 320, image::imageops::FilterType::Nearest)
-                } else {
-                    rgba
-                };
-                let (w2, h2) = atlas_img.dimensions();
-                let bytes = atlas_img.into_raw();
-                return Self::from_bytes(device, queue, &bytes, w2, h2);
+        // Build atlas image from file, composed tiles, or fallback solid colour.
+        let mut atlas_img: RgbaImage = 'load: {
+            for atlas_path in atlas_paths {
+                if let Ok(img) = image::open(atlas_path) {
+                    let rgba = img.to_rgba8();
+                    let (w, h) = img.dimensions();
+                    break 'load if w != 512 || h != 320 {
+                        let dyn_img = image::DynamicImage::ImageRgba8(rgba);
+                        image::imageops::resize(&dyn_img, 512, 320, image::imageops::FilterType::Nearest)
+                    } else {
+                        rgba
+                    };
+                }
             }
-        }
+            if let Some(composed) = Self::compose_from_blocks() {
+                break 'load composed;
+            }
+            // Last-resort fallback: solid white checkerboard
+            let mut fb = RgbaImage::new(512, 320);
+            for y in 0..320u32 {
+                for x in 0..512u32 {
+                    let v = if (x / 16 + y / 16) % 2 == 0 { 255 } else { 200 };
+                    fb.put_pixel(x, y, image::Rgba([v, v, v, 255]));
+                }
+            }
+            fb
+        };
 
-        if let Some(atlas_img) = Self::compose_from_blocks() {
-            let (w, h) = atlas_img.dimensions();
-            let bytes = atlas_img.into_raw();
-            return Self::from_bytes(device, queue, &bytes, w, h);
-        }
+        // Overwrite water tile slots with procedurally-generated textures so that
+        // water always looks correct regardless of which atlas was loaded.
+        Self::inject_water_tiles(&mut atlas_img);
 
-        let bytes = vec![255u8; 256 * 64 * 4];
-        Self::from_bytes(device, queue, &bytes, 256, 64)
+        let (w, h) = atlas_img.dimensions();
+        let bytes = atlas_img.into_raw();
+        Self::from_bytes(device, queue, &bytes, w, h)
     }
 
     pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, rgba_bytes: &[u8], width: u32, height: u32) -> Result<Self> {
@@ -132,6 +140,78 @@ impl AtlasTexture {
             ..Default::default()
         });
         Ok(Self { view, sampler })
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Procedural water textures
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Overwrite atlas tile positions (10,0) and (11,0) with mathematically
+    /// generated water_still and water_flow textures.
+    ///
+    /// Atlas layout: 32 columns × 20 rows of 16×16 px tiles on a 512×320 canvas.
+    /// Tile (col, row) starts at pixel (col*16, row*16).
+    fn inject_water_tiles(atlas: &mut RgbaImage) {
+        for ty in 0u32..16 {
+            for tx in 0u32..16 {
+                atlas.put_pixel(160 + tx, ty, Self::water_still_pixel(tx, ty)); // col 10
+                atlas.put_pixel(176 + tx, ty, Self::water_flow_pixel(tx, ty));  // col 11
+            }
+        }
+    }
+
+    /// Generate one pixel of the *still water* tile.
+    ///
+    /// Combines four sine/cosine wave functions at different frequencies and
+    /// phases to produce a rippled surface pattern with deep Minecraft-blue tones.
+    fn water_still_pixel(x: u32, y: u32) -> image::Rgba<u8> {
+        use std::f32::consts::TAU;
+        let fx = x as f32 * TAU / 16.0;
+        let fy = y as f32 * TAU / 16.0;
+
+        // Four overlapping waves at varied frequencies and phases
+        let w1 = (fx * 2.5 + fy * 1.3).sin();
+        let w2 = (fx * 1.7 - fy * 2.1 + 1.2).sin();
+        let w3 = (fx * 0.7 + fy * 3.1 + 0.5).cos();
+        let w4 = ((fx - std::f32::consts::PI).sin() * (fy - std::f32::consts::PI).sin()).abs();
+
+        // Weighted sum → gamma-corrected [0,1]
+        let c = ((w1 * 0.40 + w2 * 0.30 + w3 * 0.20 + w4 * 0.10) * 0.5 + 0.5)
+            .powf(0.75)
+            .clamp(0.0, 1.0);
+
+        // Deep blue–teal palette
+        image::Rgba([
+            (14.0 + c * 38.0) as u8,   // R: 14 – 52
+            (42.0 + c * 78.0) as u8,   // G: 42 – 120
+            (135.0 + c * 78.0) as u8,  // B: 135 – 213
+            190,                        // A: semi-transparent
+        ])
+    }
+
+    /// Generate one pixel of the *flowing water* tile.
+    ///
+    /// Uses vertical stream-lines with superimposed foam and eddy functions to
+    /// suggest downward motion. Slightly brighter and more turquoise than still.
+    fn water_flow_pixel(x: u32, y: u32) -> image::Rgba<u8> {
+        use std::f32::consts::TAU;
+        let fx = x as f32 * TAU / 16.0;
+        let fy = y as f32 * TAU / 16.0;
+
+        let stream = (fx * 1.5 + fy * 3.0).sin();                   // downward flow lines
+        let foam   = ((fx * 4.0).sin() * (fy * 2.5 + 0.7).cos()).abs(); // foam bubbles
+        let eddy   = (fx * 2.0 - fy * 1.5 + 2.1).cos();             // lateral turbulence
+
+        let c = ((stream * 0.45 + foam * 0.35 + eddy * 0.20) * 0.5 + 0.5)
+            .powf(0.80)
+            .clamp(0.0, 1.0);
+
+        image::Rgba([
+            (12.0 + c * 35.0) as u8,   // R: 12 – 47
+            (38.0 + c * 65.0) as u8,   // G: 38 – 103
+            (128.0 + c * 85.0) as u8,  // B: 128 – 213
+            172,                        // A: slightly more transparent than still
+        ])
     }
 
     fn compose_from_blocks() -> Option<RgbaImage> {
