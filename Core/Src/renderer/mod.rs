@@ -457,18 +457,7 @@ impl State {
                 }
             }
         }
-        // Priority 2: any subtitle font found by the asset system.
-        if !font_loaded {
-            match crate::assets::ensure_subtitle_font() {
-                Ok(Some(path)) => {
-                    if text_renderer.load_font_from_path(&path).is_ok() {
-                        font_loaded = true;
-                    }
-                }
-                _ => {}
-            }
-        }
-        // Priority 3: common Windows system fonts.
+        // Priority 2: common Windows system fonts (readable, before falling back to display fonts).
         if !font_loaded {
             let system_fonts = [
                 r"C:\Windows\Fonts\segoeui.ttf",
@@ -478,11 +467,22 @@ impl State {
                 r"C:\Windows\Fonts\verdana.ttf",
             ];
             for path in &system_fonts {
-                if std::path::Path::new(path).exists() {
+                if !font_loaded && std::path::Path::new(path).exists() {
                     if text_renderer.load_font_from_path(path).is_ok() {
-                        break;
+                        font_loaded = true;
                     }
                 }
+            }
+        }
+        // Priority 3: any subtitle font found by the asset system (may be a display/dot font).
+        if !font_loaded {
+            match crate::assets::ensure_subtitle_font() {
+                Ok(Some(path)) => {
+                    if text_renderer.load_font_from_path(&path).is_ok() {
+                        font_loaded = true;
+                    }
+                }
+                _ => {}
             }
         }
 
