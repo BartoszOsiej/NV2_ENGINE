@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run NV2 Engine with Vulkan Layer",
+      "type": "shell",
+      "command": "${workspaceFolder}/Core/target/debug/nv2_engine.exe",
+      "options": {
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/c"]
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}

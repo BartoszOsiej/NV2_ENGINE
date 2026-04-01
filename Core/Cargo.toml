@@ -1,15 +1,21 @@
 [package]
-name = "nv2_engine"
+name    = "nv2_engine"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wgpu        = "0.20"
-winit       = "0.30"
-cgmath      = "0.18"
-bytemuck    = { version = "1", features = ["derive"] }
-image       = "0.25"
-anyhow      = "1"
-pollster    = "0.3"
-env_logger  = "0.11"
-noise       = "0.9"
+wgpu       = "0.20"
+winit      = "0.30"
+cgmath     = "0.18"
+bytemuck   = { version = "1", features = ["derive"] }
+image      = "0.25"
+anyhow     = "1"
+pollster   = "0.3"
+env_logger = "0.11"
+log        = "0.4"
+noise      = "0.8"
+serde_json = "1"
+serde      = { version = "1", features = ["derive"] }
+rayon      = "1"
+num_cpus   = "1"
+fontdue    = "0.7"

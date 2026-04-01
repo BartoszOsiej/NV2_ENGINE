@@ -1,0 +1,36 @@
+{
+	"format_version": "1.21.6",
+	"credit": "Made with Blockbench",
+	"ambientocclusion": false,
+	"textures": {
+		"2": "block/lever_base",
+		"lever": "block/lever",
+		"particle": "block/cobblestone"
+	},
+	"elements": [
+		{
+			"from": [5, -0.02, 4],
+			"to": [11, 2.98, 12],
+			"faces": {
+				"north": {"uv": [10, 13, 16, 16], "texture": "#2"},
+				"east": {"uv": [0, 0, 3, 8], "rotation": 270, "texture": "#2"},
+				"south": {"uv": [10, 9, 16, 12], "rotation": 180, "texture": "#2"},
+				"west": {"uv": [9, 0, 12, 8], "rotation": 90, "texture": "#2"},
+				"up": {"uv": [3, 0, 9, 8], "rotation": 180, "texture": "#2"},
+				"down": {"uv": [3, 8, 9, 16], "rotation": 180, "texture": "#2", "cullface": "down"}
+			}
+		},
+		{
+			"from": [7, 1, 7],
+			"to": [9, 11, 9],
+			"rotation": {"angle": 45, "axis": "x", "origin": [8, 1, 8]},
+			"faces": {
+				"north": {"uv": [7, 6, 9, 16], "texture": "#lever"},
+				"east": {"uv": [7, 6, 9, 16], "texture": "#lever"},
+				"south": {"uv": [7, 6, 9, 16], "texture": "#lever"},
+				"west": {"uv": [7, 6, 9, 16], "texture": "#lever"},
+				"up": {"uv": [7, 6, 9, 8], "texture": "#lever"}
+			}
+		}
+	]
+}

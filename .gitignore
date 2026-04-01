@@ -1,0 +1,12 @@
+# Rust build artifacts
+/Core/target/
+target/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/settings.json
+*.suo
+*.user

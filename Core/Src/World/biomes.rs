@@ -1,0 +1,382 @@
+use noise::{NoiseFn, Perlin};
+use super::block::BlockType;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Biome {
+    Plains,
+    ForestDense,
+    ForestSparse,
+    Mountains,
+    Beach,
+    Desert,
+    Snowy,
+    Swamp,
+    River,
+    Glade,
+}
+
+/// Advanced biome generator with Minecraft-style terrain features
+/// Features: caves, ores, trees, varied terrain, biome transitions
+pub struct BiomeGenerator {
+    // Terrain noise sources
+    height_noise: Perlin,      // Primary terrain height
+    biome_noise: Perlin,       // Biome classification (temp/humidity)
+    detail_noise: Perlin,      // Local terrain variation
+        river_noise: Perlin,       // Large-scale river mask
+        glade_noise: Perlin,       // Clearings inside forests
+    
+    // Feature generation
+    cave_noise: Perlin,        // Cave system generation
+    ore_noise: Perlin,         // Ore vein distribution
+    tree_noise: Perlin,        // Tree placement
+    
+    seed: u32,
+}
+
+impl BiomeGenerator {
+    pub fn new(seed: u32) -> Self {
+        Self {
+            height_noise: Perlin::new(seed),
+            biome_noise: Perlin::new(seed.wrapping_add(1337)),
+            detail_noise: Perlin::new(seed.wrapping_add(2555)),
+            cave_noise: Perlin::new(seed.wrapping_add(3773)),
+            ore_noise: Perlin::new(seed.wrapping_add(4991)),
+            tree_noise: Perlin::new(seed.wrapping_add(6209)),
+            river_noise: Perlin::new(seed.wrapping_add(7439)),
+            glade_noise: Perlin::new(seed.wrapping_add(8597)),
+            seed,
+        }
+    }
+
+    pub fn seed(&self) -> u32 {
+        self.seed
+    }
+
+    /// Determine biome at world coordinates based on temperature and humidity
+    pub fn get_biome(&self, wx: i32, wz: i32) -> Biome {
+        // Smoothly classify biomes using temperature/humidity/elevation features
+        let nx = wx as f64 * 0.0025;
+        let nz = wz as f64 * 0.0025;
+
+        let temp = self.biome_noise.get([nx, nz]);
+        let humidity = self.biome_noise.get([nx + 100.0, nz + 100.0]);
+        let elev = (self.base_height(wx, wz) / 1.875 + 1.0) * 0.5; // normalized 0..1
+
+        // Rivers take absolute precedence when the river mask is near zero
+        let rnoise = self.river_noise.get([wx as f64 * 0.0015, wz as f64 * 0.0015]);
+        if rnoise.abs() < 0.018 {
+            return Biome::River;
+        }
+
+        // Build a small feature vector and pick the closest biome center
+        let feats = (temp, humidity, elev);
+        let mut best = Biome::Plains;
+        let mut best_score = std::f64::INFINITY;
+
+        for (b, cent) in Self::biome_feature_centers().iter() {
+            let dx = feats.0 - cent.0;
+            let dy = feats.1 - cent.1;
+            let dz = feats.2 - cent.2;
+            let dist2 = dx*dx + dy*dy + dz*dz;
+            if dist2 < best_score {
+                best_score = dist2;
+                best = *b;
+            }
+        }
+
+        // A few heuristic overrides for special cases
+        if feats.2 > 0.85 {
+            if feats.0 < -0.15 { return Biome::Snowy; }
+            return Biome::Mountains;
+        }
+        if feats.1 > 0.55 && feats.2 < 0.2 { return Biome::Swamp; }
+
+        best
+    }
+
+    /// Returns a list of (Biome, feature_center) where each center is (temp, humidity, elev)
+    fn biome_feature_centers() -> Vec<(Biome, (f64, f64, f64))> {
+        vec![
+            (Biome::Plains, (0.0, 0.0, 0.45)),
+            (Biome::ForestDense, (0.1, 0.55, 0.50)),
+            (Biome::ForestSparse, (0.05, 0.30, 0.50)),
+            (Biome::Mountains, (-0.2, 0.0, 0.85)),
+            (Biome::Beach, (0.4, 0.0, 0.12)),
+            (Biome::Desert, (0.6, -0.6, 0.35)),
+            (Biome::Snowy, (-0.9, 0.0, 0.95)),
+            (Biome::Swamp, (0.0, 0.8, 0.30)),
+            (Biome::River, (0.0, 0.6, 0.30)),
+            (Biome::Glade, (0.1, 0.4, 0.48)),
+        ]
+    }
+
+    /// Calculate base height using fractal Brownian motion (fbm)
+    /// This creates more interesting terrain than simple noise
+    fn base_height(&self, wx: i32, wz: i32) -> f64 {
+        let nx = wx as f64 * 0.008;
+        let nz = wz as f64 * 0.008;
+
+        // Fractal Brownian Motion: combine multiple octaves of noise
+        let h1 = self.height_noise.get([nx, nz]) * 1.0;
+        let h2 = self.height_noise.get([nx * 2.0, nz * 2.0]) * 0.5;
+        let h3 = self.height_noise.get([nx * 4.0, nz * 4.0]) * 0.25;
+        let h4 = self.height_noise.get([nx * 8.0, nz * 8.0]) * 0.125;
+
+        h1 + h2 + h3 + h4
+    }
+
+    /// Get surface height with biome-specific terrain variations
+    pub fn surface_height(&self, wx: i32, wz: i32) -> u32 {
+        // Use weighted biome-aware terrain parameters to produce smooth transitions
+        let base = self.base_height(wx, wz);
+        let detail = self.detail_noise.get([wx as f64 * 0.02, wz as f64 * 0.02]);
+        let normalized = (base / 1.875 + 1.0) * 0.5;
+        let mut height = 48.0 + normalized * 28.0; // fallback
+
+        match self.get_biome(wx, wz) {
+            Biome::Plains => height = 45.0 + normalized * 25.0,
+            Biome::ForestDense => height = 52.0 + normalized * 28.0,
+            Biome::ForestSparse => height = 50.0 + normalized * 26.0,
+            Biome::Mountains => height = 60.0 + normalized * 80.0,
+            Biome::Beach => height = 48.0 + normalized * 4.0,
+            Biome::Desert => height = 50.0 + normalized * 20.0,
+            Biome::Snowy => height = 55.0 + normalized * 35.0,
+            Biome::Swamp => height = 44.0 + normalized * 10.0,
+            Biome::River => height = 40.0 + normalized * 6.0,
+            Biome::Glade => height = 50.0 + normalized * 25.0,
+        }
+
+        // Apply local detail variation
+        let height_variation = 0.92 + (detail + 1.0) * 0.04; // small ±4% variation
+        (height * height_variation) as u32
+    }
+
+    /// Check if there's a cave at this position using 3D Perlin noise
+    fn is_cave(&self, wx: i32, wy: i32, wz: i32, surface: u32) -> bool {
+        // Only caves below surface
+        if wy as u32 >= surface {
+            return false;
+        }
+        
+        // Don't create caves too close to bedrock
+        if wy < 5 {
+            return false;
+        }
+
+        let nx = wx as f64 * 0.05;
+        let ny = wy as f64 * 0.05;
+        let nz = wz as f64 * 0.05;
+
+        let cave1 = (self.cave_noise.get([nx, ny, nz]) + 1.0) * 0.5;
+        let cave2 = (self.cave_noise.get([nx + 100.0, ny, nz + 100.0]) + 1.0) * 0.5;
+
+        // Create cave network - threshold adjusted for desired cave size
+        cave1 > 0.45 && cave2 > 0.45
+    }
+
+    /// Determine ore type based on depth and noise
+    fn get_ore_at(&self, wy: i32, wx: i32, wz: i32, surface: u32) -> Option<BlockType> {
+        if wy as u32 >= surface || wy < 5 {
+            return None;
+        }
+
+        let depth_pct = 1.0 - (wy as f64 / surface as f64);
+        let ore_val = (self.ore_noise.get([wx as f64 * 0.04, wy as f64 * 0.04, wz as f64 * 0.04]) + 1.0) * 0.5;
+
+        // Ore distribution by depth
+        match () {
+            _ if ore_val > 0.92 && depth_pct < 0.1 => Some(BlockType::CoalOre),
+            _ if ore_val > 0.94 && depth_pct < 0.3 => Some(BlockType::IronOre),
+            _ if ore_val > 0.96 && depth_pct < 0.5 => Some(BlockType::GoldOre),
+            _ if ore_val > 0.985 && depth_pct > 0.6 => Some(BlockType::DiamondOre),
+            _ if ore_val > 0.97 && depth_pct > 0.4 => Some(BlockType::RedstoneOre),
+            _ => None,
+        }
+    }
+
+    /// Check if there should be a tree at this location
+    fn should_place_tree(&self, wx: i32, wz: i32, biome: Biome) -> bool {
+        // No trees in non-forest biomes or in rivers/glades
+        match biome {
+            Biome::ForestDense | Biome::ForestSparse => {}
+            _ => return false,
+        }
+
+        let nx = wx as f64 * 0.03;
+        let nz = wz as f64 * 0.03;
+        let tree_val = self.tree_noise.get([nx, nz]);
+
+        // Dense forests more permissive
+        match biome {
+            Biome::ForestDense => tree_val > 0.25,
+            Biome::ForestSparse => tree_val > 0.55,
+            _ => false,
+        }
+    }
+
+    /// Place a tree at the given surface location
+    fn place_tree(&self, wx: i32, surface: i32, wz: i32, column: &mut [BlockType; 256]) {
+        if (surface as u32 + 10) >= 256 {
+            return; // Not enough space
+        }
+
+        // Vary height with noise (4-9)
+        let raw = (self.tree_noise.get([wx as f64 * 0.08, wz as f64 * 0.08]) + 1.0) * 0.5;
+        let height = 4 + (raw * 5.0) as usize; // 4..9
+
+        // Trunk
+        for y in 1..=height {
+            if (surface + (y as i32)) < 256 {
+                column[(surface + (y as i32)) as usize] = BlockType::OakLog;
+            }
+        }
+
+        // Simple canopy
+        let leaf_base = surface + height as i32 - 1;
+        for dy in -2i32..=2i32 {
+            for dx in -2i32..=2i32 {
+                let dist = dx.abs() + dy.abs();
+                if dist > 3 { continue; }
+                let y = leaf_base + dy as i32 + 1;
+                if y >= 0 && y < 256 {
+                    column[y as usize] = BlockType::OakLeaves;
+                }
+            }
+        }
+    }
+
+    /// Check if position should have grass on top of grass/dirt block
+    fn should_have_grass_layer(&self, biome: Biome) -> bool {
+        matches!(biome, Biome::Plains | Biome::ForestDense | Biome::ForestSparse | Biome::Snowy | Biome::Glade)
+    }
+
+    /// Fill a vertical column with blocks based on biome and features
+    pub fn fill_column(&self, wx: i32, wz: i32, column: &mut [BlockType; 256]) {
+        let mut surface = self.surface_height(wx, wz) as usize;
+        let mut biome = self.get_biome(wx, wz);
+
+        // River carving: lower the surface around river centers
+        let rnoise = self.river_noise.get([wx as f64 * 0.0015, wz as f64 * 0.0015]);
+        let river_abs = rnoise.abs();
+        let is_river = river_abs < 0.018;
+        if is_river {
+            // Lower the bed and mark as river biome
+            let carve = 3 + ((1.0 - river_abs / 0.018) * 4.0) as usize; // 3..7
+            surface = surface.saturating_sub(carve);
+            biome = Biome::River;
+        }
+
+        // Bedrock layer
+        column[0] = BlockType::Bedrock;
+
+        // Underground and cave generation
+        for y in 1..surface {
+            // Check for caves first (higher priority)
+            if self.is_cave(wx, y as i32, wz, surface as u32) {
+                column[y] = BlockType::Air;
+                continue;
+            }
+
+            // Check for ores
+            if let Some(ore) = self.get_ore_at(y as i32, wx, wz, surface as u32) {
+                column[y] = ore;
+                continue;
+            }
+
+            // Regular block layering
+            let depth = surface - y;
+            let block = if depth < 1 {
+                // This shouldn't happen, but safety check
+                BlockType::Stone
+            } else if depth < 4 {
+                // Top soil layer
+                match biome {
+                    Biome::Desert => BlockType::Sand,
+                    Biome::Beach => BlockType::Sand,
+                    Biome::Swamp => BlockType::Dirt,
+                    Biome::River => BlockType::Dirt,
+                    _ => BlockType::Dirt,
+                }
+            } else if depth < 20 {
+                // Mid soil layer
+                match biome {
+                    Biome::Desert => BlockType::Sand,
+                    Biome::Beach => BlockType::Sand,
+                    _ => BlockType::Dirt,
+                }
+            } else {
+                // Deep stone layer
+                BlockType::Stone
+            };
+            column[y] = block;
+        }
+
+        // Surface layer based on biome
+        if surface < 256 {
+            match biome {
+                Biome::Plains => column[surface] = BlockType::Grass,
+                Biome::ForestDense | Biome::ForestSparse => column[surface] = BlockType::Grass,
+                Biome::Mountains => {
+                    if surface > 100 {
+                        column[surface] = BlockType::Snow;
+                    } else {
+                        column[surface] = BlockType::Stone;
+                    }
+                }
+                Biome::Beach => column[surface] = BlockType::Sand,
+                Biome::Desert => column[surface] = BlockType::Sand,
+                Biome::Snowy => column[surface] = BlockType::Snow,
+                Biome::Swamp => column[surface] = BlockType::Dirt,
+                Biome::River => column[surface] = BlockType::Water,
+                Biome::Glade => column[surface] = BlockType::Grass,
+            }
+        }
+
+        // Place trees in forests (avoid glades and river tiles)
+        if matches!(biome, Biome::ForestDense | Biome::ForestSparse) && self.should_place_tree(wx, wz, biome) && surface > 0 && surface < 250 {
+            self.place_tree(wx, surface as i32, wz, column);
+        }
+    }
+
+    /// Ambient color and multiplier for lighting at given world position
+    pub fn ambient_at(&self, wx: i32, wz: i32) -> [f32; 4] {
+        // Blend ambient values from nearby biome centers for smooth transitions
+        let nx = wx as f64 * 0.0025;
+        let nz = wz as f64 * 0.0025;
+        let temp = self.biome_noise.get([nx, nz]);
+        let humidity = self.biome_noise.get([nx + 100.0, nz + 100.0]);
+        let elev = (self.base_height(wx, wz) / 1.875 + 1.0) * 0.5;
+
+        // Compute weights across biome centers
+        let mut accum = [0.0f64; 4];
+        let centers = Self::biome_feature_centers();
+        let sigma = 0.25;
+        let mut total_w = 0.0;
+        for (b, cent) in centers.iter() {
+            let dx = temp - cent.0;
+            let dy = humidity - cent.1;
+            let dz = elev - cent.2;
+            let d2 = dx*dx + dy*dy + dz*dz;
+            let w = (-d2 / (2.0 * sigma * sigma)).exp();
+            total_w += w;
+            let amb = match b {
+                Biome::Plains => [0.95, 1.00, 0.90, 0.95],
+                Biome::ForestDense => [0.80, 0.95, 0.75, 0.85],
+                Biome::ForestSparse => [0.90, 1.00, 0.88, 0.95],
+                Biome::Mountains => [0.92, 0.98, 1.00, 1.0],
+                Biome::Snowy => [1.05, 1.05, 1.02, 1.05],
+                Biome::Beach => [1.02, 0.98, 0.90, 0.98],
+                Biome::Desert => [1.05, 0.95, 0.82, 1.0],
+                Biome::Swamp => [0.60, 0.75, 0.55, 0.75],
+                Biome::River => [0.78, 0.90, 1.05, 0.85],
+                Biome::Glade => [0.98, 1.05, 0.95, 1.05],
+            };
+            accum[0] += amb[0] as f64 * w;
+            accum[1] += amb[1] as f64 * w;
+            accum[2] += amb[2] as f64 * w;
+            accum[3] += amb[3] as f64 * w;
+        }
+        if total_w <= 0.0 { return [1.0,1.0,1.0,1.0]; }
+        [ (accum[0]/total_w) as f32, (accum[1]/total_w) as f32, (accum[2]/total_w) as f32, (accum[3]/total_w) as f32 ]
+    }
+}

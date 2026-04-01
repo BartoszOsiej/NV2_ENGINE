@@ -1,0 +1,11 @@
+{
+  "name": "wooden_planks_from_log",
+  "type": "shapeless",
+  "ingredients": [
+    "oak_log"
+  ],
+  "result": {
+    "item": "oak_planks",
+    "count": 4
+  }
+}
