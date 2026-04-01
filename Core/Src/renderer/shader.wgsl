@@ -61,11 +61,17 @@ fn fs_main(fs_input: VertexOutput) -> @location(0) vec4<f32> {
     let atlas_tile = vec2<f32>(16.0 / 512.0, 16.0 / 320.0);
     var tex_coords = fs_input.tex_coords;
 
-    // Vulkan coordinate correction
-    tex_coords.y = 1.0 - tex_coords.y;
-
+    // Recover which atlas tile and in-tile UV from the interpolated coordinate.
+    // NOTE: do NOT flip tex_coords.y before this — that would map tile row 0
+    // to row 19 (empty) and break all textures. We flip *within* the local tile
+    // below so that face-quad v0=bottom still shows the top of the image.
     let tile_index = floor(tex_coords / atlas_tile);
     var local_uv = fract(tex_coords / atlas_tile);
+
+    // Face quads assign v0 (top of atlas tile) to the block BOTTOM vertex and v1
+    // to the TOP vertex, making textures appear upside-down. Flip V within the
+    // tile here to correct that without disturbing tile_index.
+    local_uv.y = 1.0 - local_uv.y;
 
     if (fs_input.is_top > 0.5) {
         local_uv = vec2<f32>(local_uv.y, 1.0 - local_uv.x);

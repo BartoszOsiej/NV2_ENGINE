@@ -129,7 +129,9 @@ impl ChunkMesh {
         for x in 0..CHUNK_W {
             for z in 0..CHUNK_D {
 
-                for y in 0..CHUNK_H {
+                // Water in natural terrain never exceeds y≈90. Limiting the scan
+                // from 256 to 120 levels cuts mesh build time by more than half.
+                for y in 0..CHUNK_H.min(120) {
                     let block = chunk.get(x, y, z);
                     if *block != BlockType::Water { continue; }
 
@@ -140,6 +142,17 @@ impl ChunkMesh {
                         let nx = cx * CHUNK_W as i32 + x as i32 + dx;
                         let ny = y as i32 + dy;
                         let nz = cz * CHUNK_D as i32 + z as i32 + dz;
+
+                        // Lateral faces (X/Z neighbours) could belong to an
+                        // unloaded chunk. world.get_block() returns Air for those,
+                        // which makes water appear as solid floating cubes at the
+                        // edge of the render radius. Hide such faces until the
+                        // neighbour chunk is actually loaded.
+                        if face >= 2 {
+                            let ncx = nx.div_euclid(CHUNK_W as i32);
+                            let ncz = nz.div_euclid(CHUNK_D as i32);
+                            if world.get_chunk(ncx, ncz).is_none() { continue; }
+                        }
 
                         let neighbour = world.get_block(nx, ny, nz);
                         // Skip if neighbor is also water (internal face)

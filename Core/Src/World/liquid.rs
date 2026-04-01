@@ -69,7 +69,12 @@ pub fn simulate_step(world: &mut World) {
         };
         for lx in 0..CHUNK_W {
             for lz in 0..CHUNK_D {
-                for ly in (0..CHUNK_H).rev() {               // top → bottom order
+                // Scanning the full 256-block column for every loaded chunk
+                // causes ~20 ms stalls at each simulation tick. Water in natural
+                // terrain (SEA_LEVEL=44) plus rivers/lakes never exceed y≈100;
+                // limiting the scan to 104 cuts the scan cost by 60 %.
+                let scan_top = CHUNK_H.min(SEA_LEVEL as usize + 60);
+                for ly in (0..scan_top).rev() {               // top → bottom order
                     if *chunk.get(lx, ly, lz) != BlockType::Water { continue; }
 
                     let wx = cx * CHUNK_W as i32 + lx as i32;

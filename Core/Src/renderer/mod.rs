@@ -689,10 +689,12 @@ impl State {
         let biome_uniform = BiomeUniform { ambient, time_info: [water_time, day_bright, 0.0, 0.0] };
         self.queue.write_buffer(&self.biome_buffer, 0, bytemuck::cast_slice(&[biome_uniform]));
 
-        // Water simulation — runs at 0.5 s intervals.
+        // Water simulation — throttled to 2.0 s intervals.
+        // The simulate_step() scan cost is proportional to loaded chunk count;
+        // running it less frequently keeps frame pacing smooth.
         // Mesh rebuild is separately throttled to 2.5 s (see below).
         self.water_sim_timer += dt;
-        if self.water_sim_timer >= 0.5 {
+        if self.water_sim_timer >= 2.0 {
             self.water_sim_timer = 0.0;
             _world.simulate_water();
             self.water_sim_dirty = true;
