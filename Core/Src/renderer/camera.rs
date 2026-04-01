@@ -38,6 +38,8 @@ pub struct Camera {
     pub pitch: f32,
     pub on_ground: bool,
     pub in_water: bool,
+    bob_phase:  f32,
+    bob_offset: f32,
 }
 
 impl Camera {
@@ -47,8 +49,10 @@ impl Camera {
             velocity: Vector3::new(0.0, 0.0, 0.0),
             yaw: -90.0f32.to_radians(),
             pitch: 0.0,
-            on_ground: false,
-            in_water: false,
+            on_ground:  false,
+            in_water:   false,
+            bob_phase:  0.0,
+            bob_offset: 0.0,
         }
     }
 
@@ -83,10 +87,19 @@ impl Camera {
         self.yaw += (input.mouse_dx as f32) * 0.002;
         self.pitch -= (input.mouse_dy as f32) * 0.002;
         self.pitch = self.pitch.clamp(-1.5, 1.5);
+
+        // Head bob — subtle vertical oscillation while walking on solid ground.
+        let moving = move_vec.magnitude() > 0.0 && self.on_ground && !self.in_water;
+        if moving {
+            self.bob_phase = (self.bob_phase + _dt * 11.0) % std::f32::consts::TAU;
+        } else {
+            self.bob_phase *= (1.0 - _dt * 8.0).max(0.0);
+        }
+        self.bob_offset = self.bob_phase.sin() * 0.035;
     }
 
     fn eye_position(&self) -> Point3<f32> {
-        Point3::from_vec(self.position + Vector3::new(0.0, PLAYER_EYE_HEIGHT, 0.0))
+        Point3::from_vec(self.position + Vector3::new(0.0, PLAYER_EYE_HEIGHT + self.bob_offset, 0.0))
     }
 
     fn player_aabb(&self) -> AABB {

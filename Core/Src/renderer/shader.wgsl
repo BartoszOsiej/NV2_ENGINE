@@ -12,6 +12,7 @@ var<uniform> material: MaterialUniform;
 
 struct BiomeUniform {
     ambient_and_mul: vec4<f32>, // xyz = ambient tint, w = ambient multiplier
+    time_info:       vec4<f32>, // x = water_time, y = day_brightness (0.15–1.0), z/w reserved
 };
 @group(3) @binding(0)
 var<uniform> biome: BiomeUniform;
@@ -41,11 +42,14 @@ fn vs_main(v: VertexInput) -> VertexOutput {
     out.is_top        = v.is_top;
     out.biome_tint    = v.biome_tint;
 
-    // Directional sun light (from upper-right)
-    let sun_dir   = normalize(vec3<f32>(0.6, 1.0, 0.4));
-    let diffuse   = max(dot(v.normal, sun_dir), 0.0);
-    let ambient   = biome.ambient_and_mul.w * 0.35;
-    out.light     = (ambient + diffuse * 0.65) * v.brightness;
+    // Directional sun light (from upper-right); scaled by day brightness
+    let sun_dir    = normalize(vec3<f32>(0.6, 1.0, 0.4));
+    let diffuse    = max(dot(v.normal, sun_dir), 0.0);
+    let day        = biome.time_info.y;           // 0.15 night … 1.0 noon
+    let amb_str    = biome.ambient_and_mul.w * 0.35;
+    // Moonlight floor keeps the world slightly visible at night
+    let ambient    = mix(max(amb_str * 0.25, 0.05), amb_str, day);
+    out.light      = (ambient + diffuse * 0.65 * day) * v.brightness;
     return out;
 }
 
@@ -78,11 +82,18 @@ fn fs_main(fs_input: VertexOutput) -> @location(0) vec4<f32> {
     // Detect water tiles by their atlas indices (col 10/11, row 0)
     let is_water = (tile_index.x == 10.0 && tile_index.y == 0.0) || (tile_index.x == 11.0 && tile_index.y == 0.0);
     if (is_water) {
-        // Tint water with per-vertex biome color (river = cooler, swamp = murky)
-        let water_tint = fs_input.biome_tint * vec3<f32>(0.50, 0.75, 1.10);
-        sampled = mix(sampled, water_tint, 0.30);
-        let lit = vec4<f32>(sampled * fs_input.light, 0.60);
-        return lit;
+        // Animate the water tile UV with sinusoidal ripple waves
+        let wt = biome.time_info.x;
+        let wu = fract(local_uv.x + sin(local_uv.y * 12.0 + wt * 2.1) * 0.07 + cos(wt * 0.9) * 0.03);
+        let wv = fract(local_uv.y + sin(local_uv.x * 10.0 + wt * 1.7) * 0.07 + sin(wt * 1.1) * 0.03);
+        let wavy_tc  = tile_index * atlas_tile + vec2<f32>(wu, wv) * atlas_tile;
+        let wcolor   = textureSample(t_atlas, s_atlas, wavy_tc);
+        // Tint water with per-vertex biome color then light
+        let water_tint = fs_input.biome_tint * vec3<f32>(0.50, 0.78, 1.12);
+        let ws = mix(wcolor.rgb, water_tint, 0.28);
+        // Gently pulse alpha to suggest surface movement
+        let alpha = 0.58 + sin(wt * 1.8 + local_uv.x * 5.0 + local_uv.y * 4.0) * 0.07;
+        return vec4<f32>(ws * fs_input.light, alpha);
     }
 
     // Grass-top tile (atlas col 0, row 0): tint with biome grass color.

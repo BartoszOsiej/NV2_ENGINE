@@ -229,36 +229,103 @@ impl TextRenderer {
 
     fn queue_text_internal(&mut self, text: &str, device: &wgpu::Device, queue: &wgpu::Queue, screen_size: (u32,u32), center_y_px_top: f32, px_height: f32) -> Result<()> {
         let font = match self.font.as_ref() { Some(f) => f, None => return Ok(()) };
+
+        // Rasterize all glyphs once; reuse alpha mask for both shadow and main layers.
         let mut glyphs: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::new();
-        let mut total_w: usize = 0; let mut max_h: usize = 0;
-        for ch in text.chars() { let (metrics, bitmap) = font.rasterize(ch, px_height); total_w += metrics.width + 2; max_h = max_h.max(metrics.height); glyphs.push((metrics, bitmap)); }
+        let mut total_w: usize = 0;
+        let mut max_h:   usize = 0;
+        for ch in text.chars() {
+            let (m, bm) = font.rasterize(ch, px_height);
+            total_w += m.width.max(1) + 2;
+            max_h    = max_h.max(m.height);
+            glyphs.push((m, bm));
+        }
         if total_w == 0 || max_h == 0 { return Ok(()); }
+        let tw = total_w; let th = max_h;
 
-        let width = total_w; let height = max_h;
-        let mut img: Vec<u8> = vec![0u8; width * height * 4]; let mut cursor = 0usize;
-        for (metrics, bitmap) in glyphs { let w = metrics.width as usize; let h = metrics.height as usize; for y in 0..h { for x in 0..w { let s = y * w + x; let dx = cursor + x; let dy = y; if dx >= width || dy >= height { continue; } let dst = (dy * width + dx) * 4; let a = bitmap[s]; img[dst] = 255; img[dst+1] = 255; img[dst+2] = 255; img[dst+3] = a; } } cursor += w + 2; }
+        // Produce an RGBA pixel buffer with a given solid foreground colour (glyph alpha mask).
+        let rasterize = |r: u8, g: u8, b: u8| -> Vec<u8> {
+            let mut img = vec![0u8; tw * th * 4];
+            let mut cur = 0usize;
+            for (gm, bm) in &glyphs {
+                let gw = gm.width as usize; let gh = gm.height as usize;
+                for py in 0..gh {
+                    for px in 0..gw {
+                        let dx = cur + px; let dy = py;
+                        if dx >= tw || dy >= th { continue; }
+                        let d = (dy * tw + dx) * 4;
+                        img[d] = r; img[d+1] = g; img[d+2] = b;
+                        img[d+3] = bm[py * gw + px];
+                    }
+                }
+                cur += gw.max(1) + 2;
+            }
+            img
+        };
 
-        let tex_size = wgpu::Extent3d { width: width as u32, height: height as u32, depth_or_array_layers: 1 };
-        let texture = device.create_texture(&wgpu::TextureDescriptor { label: Some("menu text tex"), size: tex_size, mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8UnormSrgb, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
-        queue.write_texture(wgpu::ImageCopyTexture { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All }, &img, wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some((4 * width) as u32), rows_per_image: Some(height as u32) }, tex_size);
+        let sw = screen_size.0 as f32; let sh = screen_size.1 as f32;
+        let nw = (tw as f32 / sw) * 2.0;
+        let nh = (th as f32 / sh) * 2.0;
+        let cy  = 1.0 - (center_y_px_top / sh) * 2.0;
+        let bx  = -nw * 0.5;
+        let by0 = cy - nh * 0.5; let by1 = cy + nh * 0.5;
+        // 3-pixel drop shadow in NDC units
+        let sdx =  3.0 / sw * 2.0;
+        let sdy = -3.0 / sh * 2.0;
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("menu text bg"), layout: &self.bind_group_layout, entries: &[ wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) } ] });
+        #[repr(C)] #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        struct TV { position: [f32;2], uv: [f32;2] }
 
-        let screen_w = screen_size.0 as f32; let screen_h = screen_size.1 as f32;
-        let ndc_w = (width as f32 / screen_w) * 2.0; let ndc_h = (height as f32 / screen_h) * 2.0;
-        let ndc_center_y = 1.0 - (center_y_px_top / screen_h) * 2.0;
-        let x0 = -ndc_w * 0.5; let x1 = x0 + ndc_w; let y0 = ndc_center_y - ndc_h * 0.5; let y1 = ndc_center_y + ndc_h * 0.5;
+        // Helper: upload one text layer as PreparedText.
+        // Takes explicit refs so it does not borrow `self` (avoiding double-borrow).
+        let make_layer = |img: &[u8], x_off: f32, y_off: f32,
+                          device: &wgpu::Device, queue: &wgpu::Queue,
+                          layout: &wgpu::BindGroupLayout,
+                          sampler: &wgpu::Sampler| -> PreparedText {
+            let tsz = wgpu::Extent3d { width: tw as u32, height: th as u32, depth_or_array_layers: 1 };
+            let tex = device.create_texture(&wgpu::TextureDescriptor {
+                label: None, size: tsz, mip_level_count: 1, sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            queue.write_texture(
+                wgpu::ImageCopyTexture { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                img,
+                wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some((4 * tw) as u32), rows_per_image: Some(th as u32) },
+                tsz,
+            );
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let bg   = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None, layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                ],
+            });
+            let x0 = bx + x_off; let x1 = x0 + nw;
+            let y0s = by0 + y_off; let y1s = by1 + y_off;
+            let verts = [
+                TV { position: [x0, y1s], uv: [0.0, 0.0] },
+                TV { position: [x1, y1s], uv: [1.0, 0.0] },
+                TV { position: [x1, y0s], uv: [1.0, 1.0] },
+                TV { position: [x0, y0s], uv: [0.0, 1.0] },
+            ];
+            let idxs: [u16; 6] = [0, 1, 2, 0, 2, 3];
+            let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
+            let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&idxs),  usage: wgpu::BufferUsages::INDEX  });
+            PreparedText { texture: tex, texture_view: view, bind_group: bg, vertex_buffer: vb, index_buffer: ib, index_count: 6 }
+        };
 
-        #[repr(C)] #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)] struct TV { position: [f32;2], uv: [f32;2] }
-        let verts: Vec<TV> = vec![ TV { position: [x0, y1], uv: [0.0,0.0] }, TV { position: [x1, y1], uv: [1.0,0.0] }, TV { position: [x1, y0], uv: [1.0,1.0] }, TV { position: [x0, y0], uv: [0.0,1.0] } ];
-        let indices: Vec<u16> = vec![0,1,2, 0,2,3];
-
-        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("menu text vb"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
-        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("menu text ib"), contents: bytemuck::cast_slice(&indices), usage: wgpu::BufferUsages::INDEX });
-
-        self.prepared_menu_texts.push(PreparedText { texture, texture_view: view, bind_group, vertex_buffer: vb, index_buffer: ib, index_count: indices.len() as u32 });
-
+        // Shadow (dark, offset) is pushed first so it renders underneath.
+        let shadow_img = rasterize(18, 18, 24);
+        let shadow_pt  = make_layer(&shadow_img, sdx, sdy, device, queue, &self.bind_group_layout, &self.sampler);
+        // Main white layer on top.
+        let main_img   = rasterize(255, 255, 255);
+        let main_pt    = make_layer(&main_img, 0.0, 0.0, device, queue, &self.bind_group_layout, &self.sampler);
+        self.prepared_menu_texts.push(shadow_pt);
+        self.prepared_menu_texts.push(main_pt);
         Ok(())
     }
 

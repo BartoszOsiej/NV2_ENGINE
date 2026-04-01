@@ -29,8 +29,10 @@ pub struct MaterialUniform {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BiomeUniform {
-    // rgb ambient tint, w = ambient multiplier
-    pub ambient: [f32; 4],
+    /// xyz = ambient rgb tint, w = ambient multiplier
+    pub ambient:   [f32; 4],
+    /// x = water animation time, y = day brightness (0.15 night … 1.0 noon), z/w reserved
+    pub time_info: [f32; 4],
 }
 
 #[repr(C)]
@@ -119,10 +121,17 @@ pub struct State {
     /// Accumulates dt; GPU buffer upload only runs when this exceeds 0.1 s.
     /// Resets to a high value on chunk-boundary cross to force immediate upload.
     mesh_rebuild_timer: f32,
+    /// Throttles full water MESH rebuild to at most once per 2.5 s (decoupled from
+    /// the 0.5 s simulation tick so traversal never rebuilds 81 chunks/frame).
+    water_mesh_rebuild_timer: f32,
+    /// Set when water meshes only need recombining, not a full geometry rebuild.
+    needs_water_combine: bool,
     // Cached menu GPU buffers — rebuilt only when mode or selection changes
     cached_ui_vertex_buffer: Option<wgpu::Buffer>,
     cached_ui_index_buffer: Option<wgpu::Buffer>,
     cached_ui_index_count: u32,
+    /// Monotonically increasing session time (seconds). Drives day/night + water anim.
+    elapsed_time: f32,
 }
 
 impl State {
@@ -287,7 +296,7 @@ impl State {
             }],
         });
 
-        let default_biome = BiomeUniform { ambient: [1.0, 1.0, 1.0, 1.0] };
+        let default_biome = BiomeUniform { ambient: [1.0, 1.0, 1.0, 1.0], time_info: [0.0, 1.0, 0.0, 0.0] };
         let biome_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Biome Uniform Buffer"),
             contents: bytemuck::cast_slice(&[default_biome]),
@@ -430,17 +439,33 @@ impl State {
         });
 
         let mut text_renderer = TextRenderer::new(&device, &config);
-        // Try the project-specific font first, then fall back to common Windows system fonts
-        // so menu text always renders regardless of whether the Doto font is present.
         let mut font_loaded = false;
-        match crate::assets::ensure_subtitle_font() {
-            Ok(Some(path)) => {
-                if text_renderer.load_font_from_path(&path).is_ok() {
+        // Priority 1: Rubik Burned — the project’s chosen display font.
+        let rubik_search = [
+            "Core/Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+            "Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+            "../Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+            "../../Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+        ];
+        for p in &rubik_search {
+            if !font_loaded && std::path::Path::new(p).exists() {
+                if text_renderer.load_font_from_path(p).is_ok() {
                     font_loaded = true;
                 }
             }
-            _ => {}
         }
+        // Priority 2: any subtitle font found by the asset system.
+        if !font_loaded {
+            match crate::assets::ensure_subtitle_font() {
+                Ok(Some(path)) => {
+                    if text_renderer.load_font_from_path(&path).is_ok() {
+                        font_loaded = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Priority 3: common Windows system fonts.
         if !font_loaded {
             let system_fonts = [
                 r"C:\Windows\Fonts\segoeui.ttf",
@@ -505,19 +530,44 @@ impl State {
             water_sim_dirty: false,
             needs_gpu_upload: false,
             mesh_rebuild_timer: 0.0,
+            water_mesh_rebuild_timer: 0.0,
+            needs_water_combine: false,
             cached_ui_vertex_buffer: None,
             cached_ui_index_buffer: None,
             cached_ui_index_count: 0,
+            elapsed_time: 0.0,
             text_renderer: Some(text_renderer),
         }
     }
 
-    fn ui_clear_color(mode: UiMode) -> wgpu::Color {
+    fn ui_clear_color(mode: UiMode, elapsed: f32) -> wgpu::Color {
         match mode {
-            UiMode::None => wgpu::Color { r: 0.4, g: 0.7, b: 1.0, a: 1.0 },
-            UiMode::MainMenu => wgpu::Color { r: 0.06, g: 0.08, b: 0.12, a: 1.0 },
+            UiMode::None      => Self::sky_color_for_time(elapsed),
+            UiMode::MainMenu  => wgpu::Color { r: 0.06, g: 0.08, b: 0.12, a: 1.0 },
             UiMode::PauseMenu => wgpu::Color { r: 0.04, g: 0.05, b: 0.08, a: 1.0 },
         }
+    }
+
+    /// Smooth day/night sky gradient. `t` is session seconds; 300-second full day cycle.
+    fn sky_color_for_time(t: f32) -> wgpu::Color {
+        use std::f32::consts::TAU;
+        let phase = (t / 300.0).fract();
+        // noon_blend: 0.0 at midnight, 1.0 at noon
+        let noon = ((phase * TAU - std::f32::consts::FRAC_PI_2).sin() * 0.5 + 0.5).max(0.0_f32);
+        // dawn_blend: peak around t=0.25 and t=0.75
+        let dawn = (1.0 - (phase * 2.0 - 0.5).abs().min(1.0)).powf(2.0) * 0.70;
+        let r = (0.02 + noon * 0.33 + dawn * 0.55).min(1.0) as f64;
+        let g = (0.03 + noon * 0.62 + dawn * 0.22).min(1.0) as f64;
+        let b = (0.08 + noon * 0.82 + dawn * 0.05).min(1.0) as f64;
+        wgpu::Color { r, g, b, a: 1.0 }
+    }
+
+    /// Day brightness: 0.15 at midnight, 1.0 at noon (drives shader diffuse/ambient).
+    fn day_brightness(t: f32) -> f32 {
+        use std::f32::consts::TAU;
+        let phase = (t / 300.0).fract();
+        let v = ((phase * TAU - std::f32::consts::FRAC_PI_2).sin() * 0.5 + 0.5).max(0.0);
+        0.15 + 0.85 * v.sqrt()
     }
 
     fn build_menu_vertices(mode: UiMode, selected_index: Option<usize>) -> (Vec<UiVertex>, Vec<u16>) {
@@ -540,12 +590,13 @@ impl State {
             add_rect(vertices, indices, x0, y0, x1, y1, color);
         }
 
-        // Shared background pane
-        add_rect(&mut vertices, &mut indices, -0.76, 0.74, 0.76, -0.74, [0.04, 0.05, 0.08, 0.92]);
-        add_rect(&mut vertices, &mut indices, -0.72, 0.70, 0.72, -0.70, [0.09, 0.10, 0.14, 0.94]);
-
+        // Shared background pane drawn only for menu modes;
+        // UiMode::None gets a crosshair instead.
         match mode {
             UiMode::MainMenu => {
+                // Background overlay
+                add_rect(&mut vertices, &mut indices, -0.76, 0.74, 0.76, -0.74, [0.04, 0.05, 0.08, 0.92]);
+                add_rect(&mut vertices, &mut indices, -0.72, 0.70, 0.72, -0.70, [0.09, 0.10, 0.14, 0.94]);
                 // Title bar
                 add_rect(&mut vertices, &mut indices, -0.60, 0.62, 0.60, 0.44, [0.15, 0.50, 0.90, 1.0]);
                 // Buttons: evenly spaced in NDC space
@@ -554,6 +605,9 @@ impl State {
                 add_button(&mut vertices, &mut indices, selected_index, 2, -0.55, -0.08, 0.55, -0.22, [0.80, 0.20, 0.28, 1.0]);
             }
             UiMode::PauseMenu => {
+                // Background overlay
+                add_rect(&mut vertices, &mut indices, -0.76, 0.74, 0.76, -0.74, [0.04, 0.05, 0.08, 0.92]);
+                add_rect(&mut vertices, &mut indices, -0.72, 0.70, 0.72, -0.70, [0.09, 0.10, 0.14, 0.94]);
                 // Title bar
                 add_rect(&mut vertices, &mut indices, -0.60, 0.62, 0.60, 0.46, [0.60, 0.30, 0.90, 1.0]);
                 // Buttons
@@ -562,7 +616,11 @@ impl State {
                 add_button(&mut vertices, &mut indices, selected_index, 2, -0.55, -0.06, 0.55, -0.20, [0.85, 0.28, 0.30, 1.0]);
                 add_button(&mut vertices, &mut indices, selected_index, 3, -0.55, -0.28, 0.55, -0.42, [0.45, 0.45, 0.55, 1.0]);
             }
-            UiMode::None => {}
+            UiMode::None => {
+                // Crosshair: two thin white rectangles crossing at screen centre.
+                add_rect(&mut vertices, &mut indices, -0.028,  0.004, 0.028, -0.004, [1.0, 1.0, 1.0, 0.85]); // horizontal bar
+                add_rect(&mut vertices, &mut indices, -0.004,  0.044, 0.004, -0.044, [1.0, 1.0, 1.0, 0.85]); // vertical bar
+            }
         }
 
         (vertices, indices)
@@ -599,9 +657,12 @@ impl State {
         self.water_sim_dirty = false;
         self.needs_gpu_upload = false;
         self.mesh_rebuild_timer = 0.0;
+        self.water_mesh_rebuild_timer = 0.0;
+        self.needs_water_combine = false;
         self.cached_ui_vertex_buffer = None;
         self.cached_ui_index_buffer = None;
         self.cached_ui_index_count = 0;
+        // elapsed_time intentionally not reset — day/night cycle persists
     }
 
     // Metody potrzebne dla main.rs
@@ -613,14 +674,18 @@ impl State {
         let material_uniform = MaterialUniform { color_tint: [self.top_tint[0], self.top_tint[1], self.top_tint[2], 0.0] };
         self.queue.write_buffer(&self.material_buffer, 0, bytemuck::cast_slice(&[material_uniform]));
 
-        // Update biome ambient based on camera/world position (cheap noise sample, no mesh work)
+        // Update biome ambient + time uniforms
         let cam_x = self.camera.position.x.round() as i32;
         let cam_z = self.camera.position.z.round() as i32;
         let ambient = _world.ambient_at(cam_x, cam_z);
-        let biome_uniform = BiomeUniform { ambient };
+        self.elapsed_time += dt;
+        let water_time  = self.elapsed_time * 0.55;
+        let day_bright  = Self::day_brightness(self.elapsed_time);
+        let biome_uniform = BiomeUniform { ambient, time_info: [water_time, day_bright, 0.0, 0.0] };
         self.queue.write_buffer(&self.biome_buffer, 0, bytemuck::cast_slice(&[biome_uniform]));
 
-        // Water simulation throttled to 0.5 s to avoid constant mesh invalidation
+        // Water simulation — runs at 0.5 s intervals.
+        // Mesh rebuild is separately throttled to 2.5 s (see below).
         self.water_sim_timer += dt;
         if self.water_sim_timer >= 0.5 {
             self.water_sim_timer = 0.0;
@@ -650,11 +715,15 @@ impl State {
                         if _world.get_chunk(key.0, key.1).is_some() {
                             let m = mesh::ChunkMesh::build(_world, key.0, key.1);
                             self.chunk_meshes.insert(key, m);
+                            // Incrementally add water mesh for this chunk only
+                            let wm = mesh::ChunkMesh::build_water(_world, key.0, key.1);
+                            self.water_meshes.insert(key, wm);
                         }
                     }
                 }
             }
             self.needs_gpu_upload = true;
+            self.needs_water_combine = true;
         }
 
         // On chunk boundary cross: evict stale cached meshes, force immediate GPU upload.
@@ -663,9 +732,12 @@ impl State {
             self.chunk_meshes.retain(|&(mx, mz), _| {
                 (mx - cx).abs() <= CLEANUP_RADIUS && (mz - cz).abs() <= CLEANUP_RADIUS
             });
+            self.water_meshes.retain(|&(mx, mz), _| {
+                (mx - cx).abs() <= CLEANUP_RADIUS && (mz - cz).abs() <= CLEANUP_RADIUS
+            });
             self.needs_gpu_upload = true;
             self.mesh_rebuild_timer = 1.0; // bypasses the 0.1-s cooldown below
-            self.water_sim_dirty = true;
+            self.needs_water_combine = true; // recombine after eviction, no full rebuild
         }
 
         // ── Step 2: GPU buffer upload — debounced to ≤10 Hz ──────────────────
@@ -706,28 +778,38 @@ impl State {
                 self.vertex_buffer = None;
                 self.index_buffer = None;
             }
-
-            self.water_sim_dirty = true;
+            // Water is handled separately; no full water rebuild necessary here.
         }
 
-        // ── Water mesh rebuild ──────────────────────────────────────────────
-        // Rebuild water geometry after simulation tick or when render extent changed.
-        if self.water_sim_dirty {
+        // ── Water mesh FULL REBUILD (throttled: ≤ once per 2.5 s) ─────────────
+        // Triggered by the liquid simulation tick. Geometry is rebuilt from the
+        // current world state, then signals a buffer-combine below.
+        self.water_mesh_rebuild_timer += dt;
+        if self.water_sim_dirty && self.water_mesh_rebuild_timer >= 2.5 {
+            self.water_mesh_rebuild_timer = 0.0;
             self.water_sim_dirty = false;
-
-            // Invalidate cached water meshes entirely so they are rebuilt fresh
             self.water_meshes.clear();
-
-            let mut water_vertices: Vec<Vertex> = Vec::new();
-            let mut water_indices: Vec<u32> = Vec::new();
-
             for dz in -RENDER_RADIUS..=RENDER_RADIUS {
                 for dx in -RENDER_RADIUS..=RENDER_RADIUS {
                     let key = (cx + dx, cz + dz);
                     if _world.get_chunk(key.0, key.1).is_some() {
-                        let wmesh = mesh::ChunkMesh::build_water(_world, key.0, key.1);
-                        self.water_meshes.insert(key, wmesh);
+                        let wm = mesh::ChunkMesh::build_water(_world, key.0, key.1);
+                        self.water_meshes.insert(key, wm);
                     }
+                }
+            }
+            self.needs_water_combine = true;
+        }
+
+        // ── Water buffer COMBINE (fast: just re-pack existing cached meshes) ──
+        // Runs after any incremental addition, eviction, or full rebuild above.
+        if self.needs_water_combine {
+            self.needs_water_combine = false;
+            let mut water_vertices: Vec<Vertex> = Vec::new();
+            let mut water_indices: Vec<u32> = Vec::new();
+            for dz in -RENDER_RADIUS..=RENDER_RADIUS {
+                for dx in -RENDER_RADIUS..=RENDER_RADIUS {
+                    let key = (cx + dx, cz + dz);
                     if let Some(wm) = self.water_meshes.get(&key) {
                         let base = water_vertices.len() as u32;
                         water_vertices.extend(&wm.vertices);
@@ -735,7 +817,6 @@ impl State {
                     }
                 }
             }
-
             self.num_water_indices = water_indices.len() as u32;
             if !water_vertices.is_empty() {
                 self.water_vertex_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -766,30 +847,25 @@ impl State {
     pub fn render(&mut self, _world: &World, mode: UiMode, selection: Option<usize>) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let clear_color = Self::ui_clear_color(mode);
+        let clear_color = Self::ui_clear_color(mode, self.elapsed_time);
 
         // Rebuild UI geometry only when mode or selection changes
         let ui_changed = mode != self.last_ui_mode || selection != self.last_ui_selection;
         if ui_changed {
-            if mode != UiMode::None {
-                let (ui_vertices, ui_indices) = Self::build_menu_vertices(mode, selection);
-                if !ui_vertices.is_empty() && !ui_indices.is_empty() {
-                    self.cached_ui_vertex_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("ui vertex buffer"),
-                        contents: bytemuck::cast_slice(&ui_vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }));
-                    self.cached_ui_index_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("ui index buffer"),
-                        contents: bytemuck::cast_slice(&ui_indices),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }));
-                    self.cached_ui_index_count = ui_indices.len() as u32;
-                } else {
-                    self.cached_ui_vertex_buffer = None;
-                    self.cached_ui_index_buffer = None;
-                    self.cached_ui_index_count = 0;
-                }
+            // build_menu_vertices returns crosshair geometry for None mode too
+            let (ui_vertices, ui_indices) = Self::build_menu_vertices(mode, selection);
+            if !ui_vertices.is_empty() && !ui_indices.is_empty() {
+                self.cached_ui_vertex_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("ui vertex buffer"),
+                    contents: bytemuck::cast_slice(&ui_vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }));
+                self.cached_ui_index_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("ui index buffer"),
+                    contents: bytemuck::cast_slice(&ui_indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                }));
+                self.cached_ui_index_count = ui_indices.len() as u32;
             } else {
                 self.cached_ui_vertex_buffer = None;
                 self.cached_ui_index_buffer = None;
