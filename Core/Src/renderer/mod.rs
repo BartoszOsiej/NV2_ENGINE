@@ -1,4 +1,4 @@
-use wgpu::util::DeviceExt;
+﻿use wgpu::util::DeviceExt;
 use winit::{window::Window, dpi::PhysicalSize};
 use std::collections::HashMap;
 // Tunable radii for loading/rendering
@@ -135,6 +135,77 @@ pub struct State {
     cached_ui_index_count: u32,
     /// Monotonically increasing session time (seconds). Drives day/night + water anim.
     elapsed_time: f32,
+}
+
+// ── Module-level helpers ────────────────────────────────────────────────────
+
+/// Pack all visible chunk meshes in a square of `radius` around `(cx, cz)`
+/// into flattened vertex/index arrays ready for a GPU upload.
+fn combine_meshes(
+    meshes: &HashMap<(i32, i32), mesh::ChunkMesh>,
+    cx: i32, cz: i32, radius: i32,
+) -> (Vec<Vertex>, Vec<u32>) {
+    let mut verts = Vec::new();
+    let mut idxs  = Vec::new();
+    for dz in -radius..=radius {
+        for dx in -radius..=radius {
+            if let Some(m) = meshes.get(&(cx + dx, cz + dz)) {
+                let base = verts.len() as u32;
+                verts.extend_from_slice(&m.vertices);
+                idxs.extend(m.indices.iter().map(|&i| i + base));
+            }
+        }
+    }
+    (verts, idxs)
+}
+
+/// Upload a vertex+index buffer pair to the GPU.
+/// Returns `(None, None)` when `vertices` is empty.
+fn upload_pair(
+    device:   &wgpu::Device,
+    vertices: &[Vertex],
+    indices:  &[u32],
+) -> (Option<wgpu::Buffer>, Option<wgpu::Buffer>) {
+    if vertices.is_empty() {
+        return (None, None);
+    }
+    let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label:    None,
+        contents: bytemuck::cast_slice(vertices),
+        usage:    wgpu::BufferUsages::VERTEX,
+    });
+    let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label:    None,
+        contents: bytemuck::cast_slice(indices),
+        usage:    wgpu::BufferUsages::INDEX,
+    });
+    (Some(vb), Some(ib))
+}
+
+/// Try font paths in priority order; stops after the first successful load.
+fn load_font(tr: &mut TextRenderer) {
+    let candidates: &[&str] = &[
+        // Project display font (paths relative to the working directory)
+        "Core/Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+        "Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+        "../Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+        "../../Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
+        // Readable Windows system fonts
+        r"C:\Windows\Fonts\segoeui.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\calibri.ttf",
+        r"C:\Windows\Fonts\tahoma.ttf",
+        r"C:\Windows\Fonts\verdana.ttf",
+    ];
+    for path in candidates {
+        if std::path::Path::new(path).exists() && tr.load_font_from_path(path).is_ok() {
+            return;
+        }
+    }
+    // Last resort: let the asset system locate any available subtitle font.
+    if let Ok(Some(path)) = crate::assets::ensure_subtitle_font() {
+        let _ = tr.load_font_from_path(&path);
+    }
 }
 
 impl State {
@@ -442,49 +513,7 @@ impl State {
         });
 
         let mut text_renderer = TextRenderer::new(&device, &config);
-        let mut font_loaded = false;
-        // Priority 1: Rubik Burned — the project’s chosen display font.
-        let rubik_search = [
-            "Core/Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
-            "Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
-            "../Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
-            "../../Assets/Fonts/Subtitles/RubikBurned-Regular.ttf",
-        ];
-        for p in &rubik_search {
-            if !font_loaded && std::path::Path::new(p).exists() {
-                if text_renderer.load_font_from_path(p).is_ok() {
-                    font_loaded = true;
-                }
-            }
-        }
-        // Priority 2: common Windows system fonts (readable, before falling back to display fonts).
-        if !font_loaded {
-            let system_fonts = [
-                r"C:\Windows\Fonts\segoeui.ttf",
-                r"C:\Windows\Fonts\arial.ttf",
-                r"C:\Windows\Fonts\calibri.ttf",
-                r"C:\Windows\Fonts\tahoma.ttf",
-                r"C:\Windows\Fonts\verdana.ttf",
-            ];
-            for path in &system_fonts {
-                if !font_loaded && std::path::Path::new(path).exists() {
-                    if text_renderer.load_font_from_path(path).is_ok() {
-                        font_loaded = true;
-                    }
-                }
-            }
-        }
-        // Priority 3: any subtitle font found by the asset system (may be a display/dot font).
-        if !font_loaded {
-            match crate::assets::ensure_subtitle_font() {
-                Ok(Some(path)) => {
-                    if text_renderer.load_font_from_path(&path).is_ok() {
-                        font_loaded = true;
-                    }
-                }
-                _ => {}
-            }
-        }
+        load_font(&mut text_renderer);
 
         Self {
             window,
@@ -670,10 +699,9 @@ impl State {
         // elapsed_time intentionally not reset — day/night cycle persists
     }
 
-    // Metody potrzebne dla main.rs
-    pub fn update(&mut self, _world: &mut World, _input: &mut crate::input::InputState, dt: f32) {
-        self.camera.handle_input(_input, dt);
-        self.camera.update_physics(_world, dt);
+    pub fn update(&mut self, world: &mut World, input: &mut crate::input::InputState, dt: f32) {
+        self.camera.handle_input(input, dt);
+        self.camera.update_physics(world, dt);
         self.camera_uniform.update_view_proj(&self.camera, self.config.width as f32 / self.config.height as f32);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
         let material_uniform = MaterialUniform { color_tint: [self.top_tint[0], self.top_tint[1], self.top_tint[2], 0.0] };
@@ -682,7 +710,7 @@ impl State {
         // Update biome ambient + time uniforms
         let cam_x = self.camera.position.x.round() as i32;
         let cam_z = self.camera.position.z.round() as i32;
-        let ambient = _world.ambient_at(cam_x, cam_z);
+        let ambient = world.ambient_at(cam_x, cam_z);
         self.elapsed_time += dt;
         let water_time  = self.elapsed_time * 0.55;
         let day_bright  = Self::day_brightness(self.elapsed_time);
@@ -696,19 +724,19 @@ impl State {
         self.water_sim_timer += dt;
         if self.water_sim_timer >= 2.0 {
             self.water_sim_timer = 0.0;
-            _world.simulate_water();
+            world.simulate_water();
             self.water_sim_dirty = true;
         }
 
         // Process any chunks that finished generating in background threads
-        let new_chunks = _world.process_generated_chunks();
+        let new_chunks = world.process_generated_chunks();
 
         // Queue chunk generation based on camera position
         let cx = (self.camera.position.x / 16.0).floor() as i32;
         let cz = (self.camera.position.z / 16.0).floor() as i32;
 
-        _world.load_around(cx, cz, LOAD_RADIUS);
-        _world.unload_far_chunks(cx, cz, LOAD_RADIUS);
+        world.load_around(cx, cz, LOAD_RADIUS);
+        world.unload_far_chunks(cx, cz, LOAD_RADIUS);
 
         let chunk_moved = (cx, cz) != self.prev_chunk;
 
@@ -720,7 +748,7 @@ impl State {
                     let key = (cx + dx, cz + dz);
                     if !self.chunk_meshes.contains_key(&key)
                         && !self.meshes_to_build.contains(&key)
-                        && _world.get_chunk(key.0, key.1).is_some()
+                        && world.get_chunk(key.0, key.1).is_some()
                     {
                         self.meshes_to_build.push_back(key);
                     }
@@ -738,10 +766,10 @@ impl State {
                 None => break,
             };
             // Chunk may have been unloaded while sitting in the queue — skip it.
-            if _world.get_chunk(key.0, key.1).is_none() { continue; }
-            let m  = mesh::ChunkMesh::build(_world, key.0, key.1);
+            if world.get_chunk(key.0, key.1).is_none() { continue; }
+            let m  = mesh::ChunkMesh::build(world, key.0, key.1);
             self.chunk_meshes.insert(key, m);
-            let wm = mesh::ChunkMesh::build_water(_world, key.0, key.1);
+            let wm = mesh::ChunkMesh::build_water(world, key.0, key.1);
             self.water_meshes.insert(key, wm);
             built_this_frame += 1;
         }
@@ -775,36 +803,13 @@ impl State {
             self.mesh_rebuild_timer = 0.0;
             self.needs_gpu_upload = false;
 
-            self.current_vertices.clear();
-            self.current_indices.clear();
-
-            for dz in -RENDER_RADIUS..=RENDER_RADIUS {
-                for dx in -RENDER_RADIUS..=RENDER_RADIUS {
-                    let key = (cx + dx, cz + dz);
-                    if let Some(m) = self.chunk_meshes.get(&key) {
-                        let base = self.current_vertices.len() as u32;
-                        self.current_vertices.extend(&m.vertices);
-                        for &idx in &m.indices { self.current_indices.push(base + idx); }
-                    }
-                }
-            }
-
-            self.num_indices = self.current_indices.len() as u32;
-            if !self.current_vertices.is_empty() {
-                self.vertex_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("vertex buffer"),
-                    contents: bytemuck::cast_slice(&self.current_vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }));
-                self.index_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("index buffer"),
-                    contents: bytemuck::cast_slice(&self.current_indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                }));
-            } else {
-                self.vertex_buffer = None;
-                self.index_buffer = None;
-            }
+            let (verts, idxs)    = combine_meshes(&self.chunk_meshes, cx, cz, RENDER_RADIUS);
+            self.num_indices      = idxs.len() as u32;
+            let (vb, ib)          = upload_pair(&self.device, &verts, &idxs);
+            self.vertex_buffer    = vb;
+            self.index_buffer     = ib;
+            self.current_vertices = verts;
+            self.current_indices  = idxs;
             // Water is handled separately; no full water rebuild necessary here.
         }
 
@@ -819,8 +824,8 @@ impl State {
             for dz in -RENDER_RADIUS..=RENDER_RADIUS {
                 for dx in -RENDER_RADIUS..=RENDER_RADIUS {
                     let key = (cx + dx, cz + dz);
-                    if _world.get_chunk(key.0, key.1).is_some() {
-                        let wm = mesh::ChunkMesh::build_water(_world, key.0, key.1);
+                    if world.get_chunk(key.0, key.1).is_some() {
+                        let wm = mesh::ChunkMesh::build_water(world, key.0, key.1);
                         self.water_meshes.insert(key, wm);
                     }
                 }
@@ -832,35 +837,11 @@ impl State {
         // Runs after any incremental addition, eviction, or full rebuild above.
         if self.needs_water_combine {
             self.needs_water_combine = false;
-            let mut water_vertices: Vec<Vertex> = Vec::new();
-            let mut water_indices: Vec<u32> = Vec::new();
-            for dz in -RENDER_RADIUS..=RENDER_RADIUS {
-                for dx in -RENDER_RADIUS..=RENDER_RADIUS {
-                    let key = (cx + dx, cz + dz);
-                    if let Some(wm) = self.water_meshes.get(&key) {
-                        let base = water_vertices.len() as u32;
-                        water_vertices.extend(&wm.vertices);
-                        for &idx in &wm.indices { water_indices.push(base + idx); }
-                    }
-                }
-            }
-            self.num_water_indices = water_indices.len() as u32;
-            if !water_vertices.is_empty() {
-                self.water_vertex_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("water vertex buffer"),
-                    contents: bytemuck::cast_slice(&water_vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }));
-                self.water_index_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("water index buffer"),
-                    contents: bytemuck::cast_slice(&water_indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                }));
-            } else {
-                self.water_vertex_buffer = None;
-                self.water_index_buffer = None;
-                self.num_water_indices = 0;
-            }
+            let (wverts, widxs)       = combine_meshes(&self.water_meshes, cx, cz, RENDER_RADIUS);
+            self.num_water_indices    = widxs.len() as u32;
+            let (wvb, wib)            = upload_pair(&self.device, &wverts, &widxs);
+            self.water_vertex_buffer  = wvb;
+            self.water_index_buffer   = wib;
         }
     }
 
