@@ -57,7 +57,7 @@ impl Camera {
     }
 
     pub fn handle_input(&mut self, input: &InputState, _dt: f32) {
-        let speed = 10.0;
+        let speed = 5.5;
         let mut move_vec = Vector3::new(0.0, 0.0, 0.0);
         
         let forward = Vector3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize();
@@ -76,11 +76,11 @@ impl Camera {
 
         if input.keys_held.contains(&KeyCode::Space) {
             if self.on_ground {
-                self.velocity.y = 10.0;
+                self.velocity.y = 8.0;
                 self.on_ground = false;
             } else if self.in_water {
                 // Swim upward while Space is held
-                self.velocity.y = 4.0;
+                self.velocity.y = 3.0;
             }
         }
 
@@ -122,14 +122,15 @@ impl Camera {
         if self.in_water {
             // Buoyancy: much weaker gravity, strong terminal velocity clamp
             self.velocity.y -= 6.0 * dt;
-            if self.velocity.y < -2.5 { self.velocity.y = -2.5; }
-            // Water drag on all axes
-            let drag = 0.07f32 * (dt * 60.0);
-            self.velocity.x *= 1.0 - drag;
-            self.velocity.z *= 1.0 - drag;
-            self.velocity.y *= 1.0 - drag * 0.5;
+            if self.velocity.y < -2.0 { self.velocity.y = -2.0; }
+            // Water drag on all axes — dt-independent
+            let drag_h = (0.93_f32).powf(dt * 60.0);
+            let drag_v = (0.965_f32).powf(dt * 60.0);
+            self.velocity.x *= drag_h;
+            self.velocity.z *= drag_h;
+            self.velocity.y *= drag_v;
         } else {
-            self.velocity.y -= 32.0 * dt;
+            self.velocity.y -= 20.0 * dt;
         }
 
         self.position.y += self.velocity.y * dt;
@@ -142,8 +143,10 @@ impl Camera {
         self.position.z += self.velocity.z * dt;
         self.resolve_collisions(world, 2);
 
-        self.velocity.x *= 0.8;
-        self.velocity.z *= 0.8;
+        // Ground drag — frame-rate independent: same stop time at any fps
+        let ground_drag = (0.8_f32).powf(dt * 60.0);
+        self.velocity.x *= ground_drag;
+        self.velocity.z *= ground_drag;
     }
 
     fn resolve_collisions(&mut self, world: &crate::world::World, axis: u8) {

@@ -126,6 +126,9 @@ pub struct State {
     water_mesh_rebuild_timer: f32,
     /// Set when water meshes only need recombining, not a full geometry rebuild.
     needs_water_combine: bool,
+    /// Chunk positions whose meshes have not been built yet; drained ≤4 per frame
+    /// so mesh building never stalls the render thread for more than ~1 ms.
+    meshes_to_build: std::collections::VecDeque<(i32, i32)>,
     // Cached menu GPU buffers — rebuilt only when mode or selection changes
     cached_ui_vertex_buffer: Option<wgpu::Buffer>,
     cached_ui_index_buffer: Option<wgpu::Buffer>,
@@ -532,6 +535,7 @@ impl State {
             mesh_rebuild_timer: 0.0,
             water_mesh_rebuild_timer: 0.0,
             needs_water_combine: false,
+            meshes_to_build: std::collections::VecDeque::new(),
             cached_ui_vertex_buffer: None,
             cached_ui_index_buffer: None,
             cached_ui_index_count: 0,
@@ -548,10 +552,10 @@ impl State {
         }
     }
 
-    /// Smooth day/night sky gradient. `t` is session seconds; 300-second full day cycle.
+    /// Smooth day/night sky gradient. `t` is session seconds; 1200-second full day cycle.
     fn sky_color_for_time(t: f32) -> wgpu::Color {
         use std::f32::consts::TAU;
-        let phase = (t / 300.0).fract();
+        let phase = (t / 1200.0).fract();
         // noon_blend: 0.0 at midnight, 1.0 at noon
         let noon = ((phase * TAU - std::f32::consts::FRAC_PI_2).sin() * 0.5 + 0.5).max(0.0_f32);
         // dawn_blend: peak around t=0.25 and t=0.75
@@ -565,7 +569,7 @@ impl State {
     /// Day brightness: 0.15 at midnight, 1.0 at noon (drives shader diffuse/ambient).
     fn day_brightness(t: f32) -> f32 {
         use std::f32::consts::TAU;
-        let phase = (t / 300.0).fract();
+        let phase = (t / 1200.0).fract();
         let v = ((phase * TAU - std::f32::consts::FRAC_PI_2).sin() * 0.5 + 0.5).max(0.0);
         0.15 + 0.85 * v.sqrt()
     }
@@ -659,6 +663,7 @@ impl State {
         self.mesh_rebuild_timer = 0.0;
         self.water_mesh_rebuild_timer = 0.0;
         self.needs_water_combine = false;
+        self.meshes_to_build.clear();
         self.cached_ui_vertex_buffer = None;
         self.cached_ui_index_buffer = None;
         self.cached_ui_index_count = 0;
@@ -705,28 +710,45 @@ impl State {
 
         let chunk_moved = (cx, cz) != self.prev_chunk;
 
-        // ── Step 1: Build+cache mesh for any newly arrived chunks (fast, per-chunk) ──
-        // We do this immediately so data is ready for the next GPU upload window.
+        // ── Step 1: Enqueue any new/missing chunks that need mesh building ──
+        // Never build inside this loop — just enqueue so we can rate-limit below.
         if new_chunks {
             for dz in -RENDER_RADIUS..=RENDER_RADIUS {
                 for dx in -RENDER_RADIUS..=RENDER_RADIUS {
                     let key = (cx + dx, cz + dz);
-                    if !self.chunk_meshes.contains_key(&key) {
-                        if _world.get_chunk(key.0, key.1).is_some() {
-                            let m = mesh::ChunkMesh::build(_world, key.0, key.1);
-                            self.chunk_meshes.insert(key, m);
-                            // Incrementally add water mesh for this chunk only
-                            let wm = mesh::ChunkMesh::build_water(_world, key.0, key.1);
-                            self.water_meshes.insert(key, wm);
-                        }
+                    if !self.chunk_meshes.contains_key(&key)
+                        && !self.meshes_to_build.contains(&key)
+                        && _world.get_chunk(key.0, key.1).is_some()
+                    {
+                        self.meshes_to_build.push_back(key);
                     }
                 }
             }
-            self.needs_gpu_upload = true;
+        }
+
+        // ── Drain build queue: ≤4 chunks per frame ─────────────────────────────
+        // Spreading work across frames prevents the multi-second freeze when
+        // entering a new world or walking into an unloaded area.
+        let mut built_this_frame = 0u32;
+        while built_this_frame < 4 {
+            let key = match self.meshes_to_build.pop_front() {
+                Some(k) => k,
+                None => break,
+            };
+            // Chunk may have been unloaded while sitting in the queue — skip it.
+            if _world.get_chunk(key.0, key.1).is_none() { continue; }
+            let m  = mesh::ChunkMesh::build(_world, key.0, key.1);
+            self.chunk_meshes.insert(key, m);
+            let wm = mesh::ChunkMesh::build_water(_world, key.0, key.1);
+            self.water_meshes.insert(key, wm);
+            built_this_frame += 1;
+        }
+        if built_this_frame > 0 {
+            self.needs_gpu_upload    = true;
             self.needs_water_combine = true;
         }
 
-        // On chunk boundary cross: evict stale cached meshes, force immediate GPU upload.
+        // On chunk boundary cross: evict stale cached meshes/queue entries, force upload.
         if chunk_moved {
             self.prev_chunk = (cx, cz);
             self.chunk_meshes.retain(|&(mx, mz), _| {
@@ -735,9 +757,12 @@ impl State {
             self.water_meshes.retain(|&(mx, mz), _| {
                 (mx - cx).abs() <= CLEANUP_RADIUS && (mz - cz).abs() <= CLEANUP_RADIUS
             });
+            self.meshes_to_build.retain(|&(mx, mz)| {
+                (mx - cx).abs() <= CLEANUP_RADIUS && (mz - cz).abs() <= CLEANUP_RADIUS
+            });
             self.needs_gpu_upload = true;
             self.mesh_rebuild_timer = 1.0; // bypasses the 0.1-s cooldown below
-            self.needs_water_combine = true; // recombine after eviction, no full rebuild
+            self.needs_water_combine = true;
         }
 
         // ── Step 2: GPU buffer upload — debounced to ≤10 Hz ──────────────────
