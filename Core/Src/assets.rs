@@ -89,8 +89,10 @@ impl BlockModel {
 
     /// Resolve textures based on parent inheritance
     fn resolve_textures(parent: Option<&str>, textures: &HashMap<String, String>) -> [String; 6] {
+        let parent = parent.map(|value| value.strip_prefix("minecraft:").unwrap_or(value));
+
         match parent {
-            Some("block/cube_all") => {
+            Some("block/cube_all") | Some("block/leaves") => {
                 // All faces use the same texture
                 if let Some(all_tex) = textures.get("all") {
                     [all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone()]
@@ -105,6 +107,16 @@ impl BlockModel {
                     ]
                 }
             }
+            Some("block/cube_column") => {
+                [
+                    textures.get("end").or_else(|| textures.get("top")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("end").or_else(|| textures.get("bottom")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("side").or_else(|| textures.get("north")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("side").or_else(|| textures.get("south")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("side").or_else(|| textures.get("east")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("side").or_else(|| textures.get("west")).unwrap_or(&"unknown".to_string()).clone(),
+                ]
+            }
             Some("block/cube") => {
                 // Individual face textures
                 [
@@ -118,13 +130,17 @@ impl BlockModel {
             }
             _ => {
                 // No parent or unknown parent - try to map individual textures
+                if let Some(all_tex) = textures.get("all") {
+                    return [all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone()];
+                }
+
                 [
-                    textures.get("up").or_else(|| textures.get("top")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("down").or_else(|| textures.get("bottom")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("north").or_else(|| textures.get("front")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("south").or_else(|| textures.get("back")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("east").or_else(|| textures.get("right")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("west").or_else(|| textures.get("left")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("up").or_else(|| textures.get("top")).or_else(|| textures.get("end")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("down").or_else(|| textures.get("bottom")).or_else(|| textures.get("end")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("north").or_else(|| textures.get("front")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("south").or_else(|| textures.get("back")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("east").or_else(|| textures.get("right")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures.get("west").or_else(|| textures.get("left")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
                 ]
             }
         }

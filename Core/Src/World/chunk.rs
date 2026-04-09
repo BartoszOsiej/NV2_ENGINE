@@ -1,48 +1,38 @@
 use super::block::BlockType;
 use super::biomes::BiomeGenerator;
+use super::worldgen::WorldBlockWrite;
 
 pub const CHUNK_W: usize = 16;
 pub const CHUNK_H: usize = 256;
 pub const CHUNK_D: usize = 16;
 
+pub struct GeneratedChunk {
+    pub chunk: Chunk,
+    pub writes: Vec<WorldBlockWrite>,
+}
+
 pub struct Chunk {
     pub blocks: Box<[[[BlockType; CHUNK_D]; CHUNK_H]; CHUNK_W]>,
-    // Per-voxel water metadata: 0 = no liquid, 1-7 = flowing (level), 8 = permanent source.
+    // Per-voxel water metadata: 0 = no dynamic liquid state (also used by
+    // generated/static water), 1-7 = flowing level, 8 = permanent source.
     pub water_meta: Box<[[[u8; CHUNK_D]; CHUNK_H]; CHUNK_W]>,
     pub is_dirty: bool,
 }
 
 impl Chunk {
-    pub fn generate(cx: i32, cz: i32, gen: &BiomeGenerator) -> Self {
+    pub fn generate(cx: i32, cz: i32, gen: &BiomeGenerator) -> GeneratedChunk {
         let mut blocks = Box::new([[[BlockType::Air; CHUNK_D]; CHUNK_H]; CHUNK_W]);
         let mut water_meta = Box::new([[[0u8; CHUNK_D]; CHUNK_H]; CHUNK_W]);
+        let mut writes = Vec::new();
+        gen.populate_chunk(cx, cz, &mut blocks, &mut writes);
 
-        for x in 0..CHUNK_W {
-            for z in 0..CHUNK_D {
-                let wx = cx * CHUNK_W as i32 + x as i32;
-                let wz = cz * CHUNK_D as i32 + z as i32;
-
-                let mut column = [BlockType::Air; CHUNK_H];
-                gen.fill_column(wx, wz, &mut column);
-
-                for y in 0..CHUNK_H {
-                    blocks[x][y][z] = column[y];
-                }
-                // Mark every generated water block as a permanent source (level 8).
-                // Source blocks spread without draining, so generated rivers, lakes, and
-                // oceans remain stable and replenish any adjacent flowing water.
-                for y in 0..CHUNK_H {
-                    if blocks[x][y][z] == BlockType::Water {
-                        water_meta[x][y][z] = 8; // source block
-                    }
-                }
-            }
-        }
-
-        Self {
-            blocks,
-            water_meta,
-            is_dirty: false,
+        GeneratedChunk {
+            chunk: Self {
+                blocks,
+                water_meta,
+                is_dirty: false,
+            },
+            writes,
         }
     }
 

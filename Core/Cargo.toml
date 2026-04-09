@@ -13,9 +13,21 @@ anyhow     = "1"
 pollster   = "0.3"
 env_logger = "0.11"
 log        = "0.4"
-noise      = "0.8"
+opensimplex2 = "1.1.0"
 serde_json = "1"
 serde      = { version = "1", features = ["derive"] }
 rayon      = "1"
 num_cpus   = "1"
 fontdue    = "0.7"
+
+# ── Build profiles ─────────────────────────────────────────────────────────
+# Keep our own code unoptimised (fast compile, full debug info) but build ALL
+# third-party crates at opt-level 3. This specifically makes opensimplex2, wgpu,
+# rayon and bytemuck run at near-release speed even in `cargo build` / dev mode.
+[profile.dev.package."*"]
+opt-level = 3
+
+# opt-level 1 for our own code gives basic inlining + dead-code removal without
+# hurting compile speed, and makes per-column noise loops ~3× faster.
+[profile.dev]
+opt-level = 1

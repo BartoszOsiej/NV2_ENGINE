@@ -2,7 +2,8 @@
 ///
 /// ## Encoding (water_meta byte)
 /// ┌──────────────────────────────────────────────────────────────────────┐
-/// │  0  → empty (no liquid data)                                        │
+/// │  0  → no dynamic liquid data; generated/static terrain water stays   │
+/// │       at meta=0 and is ignored by the solver                         │
 /// │  1–7 → flowing water; level decreases with distance from source     │
 /// │  8  → permanent source block (never consumed or drained)            │
 /// └──────────────────────────────────────────────────────────────────────┘
@@ -32,13 +33,14 @@ pub const FLOW_MAX: u8 = 7;
 
 /// Maximum independent block changes applied in one simulation step.
 /// Keeps the tick time bounded even with large exposed water bodies.
-const MAX_CHANGES_PER_STEP: usize = 512;
+const MAX_CHANGES_PER_STEP: usize = 2048;
 
 // ──────────────────────────────────────────────────────────────────────────────
 //  Public API
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Decode the raw water_meta byte into a level (0 = dry, 1-7 = flow, 8 = source).
+/// Decode the raw water_meta byte into a dynamic liquid level
+/// (0 = no dynamic state, 1-7 = flow, 8 = source).
 #[inline]
 pub fn decode_level(meta: u8) -> u8 {
     if meta == 0 { 0 } else { meta.min(SOURCE_LEVEL) }
@@ -53,14 +55,20 @@ pub fn encode_level(level: u8) -> u8 {
 /// Perform one liquid simulation tick.
 ///
 /// Called by `World::simulate_water()` at a throttled rate (≈0.5 s).
+///
+/// Algorithm:
+///   1. Collect all water blocks in loaded chunks (scan up to SEA_LEVEL+60).
+///   2. For each source block (level 8) propagate gravity + lateral spread.
+///   3. For each non-source flow block, compute the *highest level reachable
+///      from any horizontal/vertical neighbour* and either raise, keep, or remove
+///      the block accordingly. This ensures flows decay when sources disappear.
 pub fn simulate_step(world: &mut World) {
-    // ── Phase 1: collect active liquid cells ─────────────────────────────────
-    // A cell is "active" when it has at least one directly adjacent air block,
-    // OR when it is below the source level (so slightly-too-low flow blocks can
-    // receive a refresh when a source nearby brings them up).
     let chunk_keys: Vec<(i32, i32)> = world.chunks.keys().cloned().collect();
+    let scan_top = CHUNK_H.min(SEA_LEVEL as usize + 65);
 
-    let mut active: Vec<(i32, i32, i32, u8)> = Vec::new(); // (wx, wy, wz, level)
+    // ── Phase 1: snapshot all water cells ────────────────────────────────────
+    // We read the whole liquid frontier into a flat list before mutating anything.
+    let mut all_water: Vec<(i32, i32, i32, u8)> = Vec::new();
 
     for (cx, cz) in &chunk_keys {
         let chunk = match world.chunks.get(&(*cx, *cz)) {
@@ -69,89 +77,168 @@ pub fn simulate_step(world: &mut World) {
         };
         for lx in 0..CHUNK_W {
             for lz in 0..CHUNK_D {
-                // Scanning the full 256-block column for every loaded chunk
-                // causes ~20 ms stalls at each simulation tick. Water in natural
-                // terrain (SEA_LEVEL=44) plus rivers/lakes never exceed y≈100;
-                // limiting the scan to 104 cuts the scan cost by 60 %.
-                let scan_top = CHUNK_H.min(SEA_LEVEL as usize + 60);
-                for ly in (0..scan_top).rev() {               // top → bottom order
+                for ly in 0..scan_top {
                     if *chunk.get(lx, ly, lz) != BlockType::Water { continue; }
-
+                    let raw = chunk.water_meta_get(lx, ly, lz);
+                    // Generated terrain water is static world water (meta=0).
+                    // Only explicit liquid-sim cells participate in dynamic flow.
+                    if raw == 0 { continue; }
                     let wx = cx * CHUNK_W as i32 + lx as i32;
                     let wy = ly as i32;
                     let wz = cz * CHUNK_D as i32 + lz as i32;
-
-                    // Only take cells adjacent to air (active frontier)
-                    let has_air_nb =
-                        (wy > 0 && world.get_block(wx, wy - 1, wz) == BlockType::Air)
-                        || world.get_block(wx + 1, wy, wz) == BlockType::Air
-                        || world.get_block(wx - 1, wy, wz) == BlockType::Air
-                        || world.get_block(wx, wy, wz + 1) == BlockType::Air
-                        || world.get_block(wx, wy, wz - 1) == BlockType::Air;
-
-                    if !has_air_nb { continue; }
-
-                    let raw   = chunk.water_meta_get(lx, ly, lz);
-                    // Legacy chunks may have 0x0F (old encoding) → treat as source
                     let level = if raw == 0 || raw > SOURCE_LEVEL { SOURCE_LEVEL } else { raw };
-                    active.push((wx, wy, wz, level));
+                    all_water.push((wx, wy, wz, level));
                 }
             }
         }
     }
 
-    // Sort highest-Y first so gravity propagates before lateral spread
-    active.sort_by_key(|(_, y, _, _)| std::cmp::Reverse(*y));
+    // Sort highest-Y first so gravity naturally chains downward in one pass.
+    all_water.sort_by_key(|(_, y, _, _)| std::cmp::Reverse(*y));
 
-    // ── Phase 2: compute changes ──────────────────────────────────────────────
-    // `spawned` tracks positions that already received a write this tick so we
-    // don't double-write.
-    let mut spawned: HashSet<(i32, i32, i32)> = HashSet::new();
-    let mut changes: Vec<(i32, i32, i32, u8)> = Vec::new(); // (wx, wy, wz, new_level)
+    // Build a fast lookup: position → current level
+    let mut level_map: HashMap<(i32, i32, i32), u8> =
+        all_water.iter().map(|&(x, y, z, l)| ((x, y, z), l)).collect();
 
-    for &(wx, wy, wz, level) in &active {
+    // ── Phase 2: propagation + decay ─────────────────────────────────────────
+    let mut changes: Vec<(i32, i32, i32, u8)> = Vec::new(); // (wx,wy,wz, new_level 0=remove)
+    let mut written: HashSet<(i32, i32, i32)> = HashSet::new();
+
+    const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+
+    for &(wx, wy, wz, level) in &all_water {
         if changes.len() >= MAX_CHANGES_PER_STEP { break; }
 
-        // Source blocks always confirm their own level (prevents erosion)
+        // ── Sources always refresh themselves and spread aggressively ─────
         if level == SOURCE_LEVEL {
+            // Confirm the source is still solid (not removed this tick)
             let key = (wx, wy, wz);
-            if !spawned.contains(&key) {
+            if !written.contains(&key) {
                 changes.push((wx, wy, wz, SOURCE_LEVEL));
-                spawned.insert(key);
+                written.insert(key);
             }
+
+            // Gravity spread: fill empty cell directly below at FLOW_MAX
+            if wy > 0 {
+                let bk = (wx, wy - 1, wz);
+                let below = world.get_block(wx, wy - 1, wz);
+                let cur   = level_map.get(&bk).cloned().unwrap_or(0);
+                if (below == BlockType::Air || (below == BlockType::Water && cur < FLOW_MAX))
+                    && !written.contains(&bk)
+                    && changes.len() < MAX_CHANGES_PER_STEP
+                {
+                    changes.push((wx, wy - 1, wz, FLOW_MAX));
+                    written.insert(bk);
+                    level_map.insert(bk, FLOW_MAX);
+                    continue; // gravity beats lateral spread
+                }
+            }
+
+            // Lateral spread from source at FLOW_MAX - 1 (=6) to adjacent air/lower water
+            let spread = FLOW_MAX - 1;
+            for &(dx, dz) in &DIRS {
+                if changes.len() >= MAX_CHANGES_PER_STEP { break; }
+                let nk  = (wx + dx, wy, wz + dz);
+                let nb  = world.get_block(wx + dx, wy, wz + dz);
+                let cur = level_map.get(&nk).cloned().unwrap_or(0);
+                if (nb == BlockType::Air || (nb == BlockType::Water && cur < spread))
+                    && !written.contains(&nk)
+                {
+                    changes.push((wx + dx, wy, wz + dz, spread));
+                    written.insert(nk);
+                    level_map.insert(nk, spread);
+                }
+            }
+            continue;
         }
 
-        // ── Gravity: try to fill the cell directly below ──────────────────
+        // ── Flowing (non-source) block: propagate and decay ──────────────
+        // Downward gravity takes absolute priority.
         if wy > 0 {
+            let bk = (wx, wy - 1, wz);
             let below = world.get_block(wx, wy - 1, wz);
-            let key   = (wx, wy - 1, wz);
-            if below == BlockType::Air && !spawned.contains(&key) {
+            let cur   = level_map.get(&bk).cloned().unwrap_or(0);
+            if (below == BlockType::Air || (below == BlockType::Water && cur < FLOW_MAX))
+                && !written.contains(&bk)
+                && changes.len() < MAX_CHANGES_PER_STEP
+            {
                 changes.push((wx, wy - 1, wz, FLOW_MAX));
-                spawned.insert(key);
-                // Gravity has priority — skip lateral spread this tick
-                continue;
+                written.insert(bk);
+                level_map.insert(bk, FLOW_MAX);
+                // Don't continue here — still do lateral spread from this cell
             }
         }
 
-        // ── Lateral spread (only for levels > 1) ─────────────────────────
+        // Lateral spread: only if level > 1
         if level <= 1 { continue; }
         let spread = level - 1;
-
-        const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
         for &(dx, dz) in &DIRS {
             if changes.len() >= MAX_CHANGES_PER_STEP { break; }
-            let n  = (wx + dx, wy, wz + dz);
-            if spawned.contains(&n) { continue; }
-            if world.get_block(wx + dx, wy, wz + dz) == BlockType::Air {
+            let nk  = (wx + dx, wy, wz + dz);
+            let nb  = world.get_block(wx + dx, wy, wz + dz);
+            let cur = level_map.get(&nk).cloned().unwrap_or(0);
+            if (nb == BlockType::Air || (nb == BlockType::Water && cur < spread))
+                && !written.contains(&nk)
+            {
                 changes.push((wx + dx, wy, wz + dz, spread));
-                spawned.insert(n);
+                written.insert(nk);
+                level_map.insert(nk, spread);
             }
         }
     }
 
-    // ── Phase 3: apply changes ────────────────────────────────────────────────
+    // ── Phase 3: decay pass — remove or lower blocks that lost their source ──
+    // For every flowing (non-source) water block that was NOT refreshed this tick,
+    // check if any neighbour can still supply it at the recorded level. If not,
+    // lower it by 1 (or remove it when it reaches 0).
+    if changes.len() < MAX_CHANGES_PER_STEP {
+        for &(wx, wy, wz, level) in &all_water {
+            if level == SOURCE_LEVEL { continue; } // sources never decay
+            if written.contains(&(wx, wy, wz)) { continue; } // already updated
+
+            // Compute the best incoming level from all 6 neighbours
+            let mut best_incoming: u8 = 0;
+
+            // From above: a block directly above at any level feeds level 7 down
+            if world.get_block(wx, wy + 1, wz) == BlockType::Water {
+                let above_lvl = level_map.get(&(wx, wy + 1, wz)).cloned().unwrap_or(0);
+                if above_lvl > 0 {
+                    best_incoming = FLOW_MAX; // gravity-fed = always full
+                }
+            }
+
+            // From horizontal neighbours
+            if best_incoming < level {
+                for &(dx, dz) in &DIRS {
+                    let nk = (wx + dx, wy, wz + dz);
+                    let nb = world.get_block(wx + dx, wy, wz + dz);
+                    if nb == BlockType::Water {
+                        let nlvl = level_map.get(&nk).cloned().unwrap_or(0);
+                        if nlvl > 1 {
+                            let can_give = nlvl - 1;
+                            if can_give > best_incoming { best_incoming = can_give; }
+                        }
+                    }
+                }
+            }
+
+            if changes.len() >= MAX_CHANGES_PER_STEP { break; }
+
+            if best_incoming < level {
+                // This block should decay
+                let new_level = if level <= 1 || best_incoming == 0 { 0 } else { best_incoming };
+                changes.push((wx, wy, wz, new_level));
+                written.insert((wx, wy, wz));
+            }
+        }
+    }
+
+    // ── Phase 4: apply all changes ────────────────────────────────────────────
     for (wx, wy, wz, level) in changes {
-        if level > 0 {
+        if level == 0 {
+            world.set_block(wx, wy, wz, BlockType::Air);
+            world.set_water_meta(wx, wy, wz, 0);
+        } else {
             world.set_block(wx, wy, wz, BlockType::Water);
             world.set_water_meta(wx, wy, wz, encode_level(level));
         }
@@ -174,7 +261,7 @@ pub fn remove_liquid(world: &mut World, wx: i32, wy: i32, wz: i32) {
     world.set_water_meta(wx, wy, wz, 0);
 }
 
-/// Return the liquid level at world coordinates (0 = no liquid).
+/// Return the dynamic liquid level at world coordinates (0 = static or dry).
 pub fn level_at(world: &World, wx: i32, wy: i32, wz: i32) -> u8 {
     let raw = world.get_water_meta(wx, wy, wz);
     decode_level(raw)

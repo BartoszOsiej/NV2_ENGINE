@@ -1,35 +1,109 @@
-use anyhow::Result;
 use std::path::Path;
 
+use anyhow::{Context, Result};
+use fontdue::{
+    layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle as LayoutTextStyle},
+    Font, FontSettings,
+};
 use wgpu::util::DeviceExt;
 
-pub struct TextRenderer {
-    pub pipeline: wgpu::RenderPipeline,
-    pub bind_group_layout: wgpu::BindGroupLayout,
-    pub sampler: wgpu::Sampler,
+const BASE_TEXT_PX: f32 = 28.0;
+const MIN_TEXT_PX: f32 = 18.0;
+const SUBTITLE_BOTTOM_MARGIN_PX: f32 = 36.0;
+const COMMAND_PROMPT_BOTTOM_MARGIN_PX: f32 = 36.0;
+const DEFAULT_OUTLINE_THICKNESS_PX: f32 = 2.0;
 
-    // Subtitles are explicit, shown only when set via `set_subtitle()`
-    pub prepared_subtitles: Vec<PreparedText>,
-    // Menu text entries (queued by menu code) and drawn only when menu is active
-    pub prepared_menu_texts: Vec<PreparedText>,
+const WHITE: [u8; 4] = [255, 255, 255, 255];
+const BLACK: [u8; 4] = [0, 0, 0, 255];
 
-    pub font: Option<fontdue::Font>,
-    pub subtitle_texture_size: (u32, u32),
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct TextVertex {
+    position: [f32; 2],
+    uv: [f32; 2],
 }
 
-pub struct PreparedText {
-    pub texture: wgpu::Texture,
-    pub texture_view: wgpu::TextureView,
-    pub bind_group: wgpu::BindGroup,
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub index_count: u32,
+impl TextVertex {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        use std::mem;
+
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<TextVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TextAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Clone, Copy)]
+struct TextBounds {
+    min_x: f32,
+    min_y: f32,
+    width: f32,
+    height: f32,
+}
+
+type PositionedGlyph = GlyphPosition<()>;
+
+struct TextLayout {
+    glyphs: Vec<PositionedGlyph>,
+    bounds: TextBounds,
+    texture_width: u32,
+    texture_height: u32,
+    padding: u32,
+}
+
+struct PreparedLayer {
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+}
+
+struct PreparedText {
+    _textures: Vec<wgpu::Texture>,
+    _views: Vec<wgpu::TextureView>,
+    layers: Vec<PreparedLayer>,
+}
+
+pub struct TextRenderer {
+    screen_size: (u32, u32),
+    font: Option<Font>,
+    outline_thickness_px: f32,
+    bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    pipeline: wgpu::RenderPipeline,
+    frame_texts: Vec<PreparedText>,
 }
 
 impl TextRenderer {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        screen_size: (u32, u32),
+    ) -> Self {
+        let shader = device.create_shader_module(wgpu::include_wgsl!("text.wgsl"));
+
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("text texture layout"),
+            label: Some("text bind group layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -50,53 +124,6 @@ impl TextRenderer {
             ],
         });
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("text.wgsl"));
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("text pipeline layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        #[repr(C)]
-        #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-        struct TextVertex { position: [f32;2], uv: [f32;2] }
-
-        let vertex_buffer_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<TextVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x2 },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32;2]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float32x2 },
-            ],
-        };
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[vertex_buffer_layout],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: Some(wgpu::BlendState { color: wgpu::BlendComponent::OVER, alpha: wgpu::BlendComponent::OVER }), write_mask: wgpu::ColorWrites::ALL })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::renderer::texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("text sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -108,249 +135,498 @@ impl TextRenderer {
             ..Default::default()
         });
 
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("text pipeline layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[TextVertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: super::texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
         Self {
-            pipeline,
+            screen_size,
+            font: None,
+            outline_thickness_px: DEFAULT_OUTLINE_THICKNESS_PX,
             bind_group_layout,
             sampler,
-            prepared_subtitles: Vec::new(),
-            prepared_menu_texts: Vec::new(),
-            font: None,
-            subtitle_texture_size: (0,0),
+            pipeline,
+            frame_texts: Vec::new(),
         }
+    }
+
+    pub fn resize(&mut self, screen_size: (u32, u32)) {
+        self.screen_size = screen_size;
+    }
+
+    pub fn screen_size(&self) -> (u32, u32) {
+        self.screen_size
+    }
+
+    pub fn measure_text_size(&self, text: &str, scale: f32) -> Option<(f32, f32)> {
+        self.measure_text(text, scale)
+            .map(|bounds| (bounds.width, bounds.height))
+    }
+
+    pub fn set_outline_thickness(&mut self, thickness_px: f32) {
+        self.outline_thickness_px = thickness_px.max(0.0);
+    }
+
+    pub fn begin_frame(&mut self, screen_size: (u32, u32)) {
+        self.screen_size = screen_size;
+        self.frame_texts.clear();
     }
 
     pub fn load_font_from_path<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
-        let data = std::fs::read(path)?;
-        match fontdue::Font::from_bytes(data.as_slice(), fontdue::FontSettings::default()) {
-            Ok(f) => self.font = Some(f),
-            Err(e) => return Err(anyhow::anyhow!("Failed to parse font: {:?}", e)),
-        }
+        let path = path.as_ref();
+        let bytes = std::fs::read(path)
+            .with_context(|| format!("failed to read font from {}", path.display()))?;
+        let font = Font::from_bytes(bytes, FontSettings::default())
+            .map_err(|err| anyhow::anyhow!("failed to parse font {}: {}", path.display(), err))?;
+        self.font = Some(font);
         Ok(())
     }
 
-    /// Set subtitle text. Clears previous subtitle and replaces it.
-    pub fn set_subtitle(&mut self, text: &str, device: &wgpu::Device, queue: &wgpu::Queue, screen_size: (u32,u32)) -> Result<()> {
-        if self.font.is_none() { return Ok(()); }
-        let font = self.font.as_ref().unwrap();
+    pub fn draw_text(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        screen_x: f32,
+        screen_y: f32,
+        scale: f32,
+        text: &str,
+        alignment: TextAlignment,
+    ) -> Result<()> {
+        self.draw_text_tinted(device, queue, screen_x, screen_y, scale, text, alignment, WHITE)
+    }
 
-        // Clear any existing subtitle
-        self.prepared_subtitles.clear();
+    pub(crate) fn draw_text_tinted(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        screen_x: f32,
+        screen_y: f32,
+        scale: f32,
+        text: &str,
+        alignment: TextAlignment,
+        color: [u8; 4],
+    ) -> Result<()> {
+        let Some(layout) = self.layout_text(text, scale) else {
+            return Ok(());
+        };
 
-        // Rasterize and upload texture (simple horizontal layout)
-        let px_height = (screen_size.1 as f32 * 0.05).max(16.0);
-        let mut glyphs: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::new();
-        let mut total_w: usize = 0;
-        let mut max_h: usize = 0;
-        for ch in text.chars() {
-            let (metrics, bitmap) = font.rasterize(ch, px_height);
-            total_w += metrics.width + 2;
-            max_h = max_h.max(metrics.height);
-            glyphs.push((metrics, bitmap));
+        let left = match alignment {
+            TextAlignment::Left => screen_x,
+            TextAlignment::Center => screen_x - layout.bounds.width * 0.5,
+            TextAlignment::Right => screen_x - layout.bounds.width,
         }
-        if total_w == 0 || max_h == 0 { return Ok(()); }
+        .round();
 
-        let width = total_w;
-        let height = max_h;
-        let mut img: Vec<u8> = vec![0u8; width * height * 4];
-        let mut cursor = 0usize;
-        for (metrics, bitmap) in glyphs {
-            let w = metrics.width as usize; let h = metrics.height as usize;
-            for y in 0..h {
-                for x in 0..w {
-                    let src = y * w + x;
-                    let dst_x = cursor + x;
-                    let dst_y = y;
-                    let dst = (dst_y * width + dst_x) * 4;
-                    let a = bitmap[src];
-                    img[dst] = 255; img[dst+1] = 255; img[dst+2] = 255; img[dst+3] = a;
-                }
+        let top = screen_y.round();
+        let base_x = left - layout.padding as f32;
+        let base_y = top - layout.padding as f32;
+
+        let outline_pixels = self.build_glyph_bitmap(&layout, BLACK)?;
+        let main_pixels = self.build_glyph_bitmap(&layout, color)?;
+
+        let (outline_texture, outline_view) = self.create_texture_resources(
+            device,
+            queue,
+            &outline_pixels,
+            layout.texture_width,
+            layout.texture_height,
+            "text outline",
+        );
+        let (main_texture, main_view) = self.create_texture_resources(
+            device,
+            queue,
+            &main_pixels,
+            layout.texture_width,
+            layout.texture_height,
+            "text color",
+        );
+
+        let mut layers = Vec::new();
+        let width = layout.texture_width as f32;
+        let height = layout.texture_height as f32;
+        for (dx, dy) in self.outline_offsets() {
+            layers.push(self.create_layer(
+                device,
+                base_x + dx as f32,
+                base_y + dy as f32,
+                width,
+                height,
+                &outline_view,
+            ));
+        }
+        layers.push(self.create_layer(device, base_x, base_y, width, height, &main_view));
+
+        self.frame_texts.push(PreparedText {
+            _textures: vec![outline_texture, main_texture],
+            _views: vec![outline_view, main_view],
+            layers,
+        });
+        Ok(())
+    }
+
+    pub fn render_subtitle(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        text: &str,
+    ) -> Result<()> {
+        let Some(bounds) = self.measure_text(text, 1.0) else {
+            return Ok(());
+        };
+
+        let screen_x = self.screen_size.0 as f32 * 0.5;
+        let screen_y = self.screen_size.1 as f32 - SUBTITLE_BOTTOM_MARGIN_PX - bounds.height;
+        self.draw_text(device, queue, screen_x, screen_y, 1.0, text, TextAlignment::Center)
+    }
+
+    pub fn render_command_prompt(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        text: &str,
+    ) -> Result<()> {
+        let Some(bounds) = self.measure_text(text, 1.2) else {
+            return Ok(());
+        };
+
+        let screen_x = self.screen_size.0 as f32 * 0.5;
+        let screen_y = self.screen_size.1 as f32 - COMMAND_PROMPT_BOTTOM_MARGIN_PX - bounds.height;
+        self.draw_text(device, queue, screen_x, screen_y, 1.2, text, TextAlignment::Center)
+    }
+
+    pub fn draw<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
+        if self.frame_texts.is_empty() {
+            return;
+        }
+
+        rpass.set_pipeline(&self.pipeline);
+        for prepared in &self.frame_texts {
+            for layer in &prepared.layers {
+                rpass.set_bind_group(0, &layer.bind_group, &[]);
+                rpass.set_vertex_buffer(0, layer.vertex_buffer.slice(..));
+                rpass.set_index_buffer(layer.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                rpass.draw_indexed(0..layer.index_count, 0, 0..1);
             }
-            cursor += w + 2;
+        }
+    }
+
+    fn measure_text(&self, text: &str, scale: f32) -> Option<TextBounds> {
+        self.layout_text(text, scale).map(|layout| layout.bounds)
+    }
+
+    fn layout_text(&self, text: &str, scale: f32) -> Option<TextLayout> {
+        let font = self.font.as_ref()?;
+        if text.trim().is_empty() {
+            return None;
         }
 
-        let tex_size = wgpu::Extent3d { width: width as u32, height: height as u32, depth_or_array_layers: 1 };
+        let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+        layout.reset(&LayoutSettings {
+            x: 0.0,
+            y: 0.0,
+            ..Default::default()
+        });
+        layout.append(&[font], &LayoutTextStyle::new(text, self.pixel_height(scale), 0));
+
+        let glyphs = layout.glyphs().to_vec();
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+
+        for glyph in &glyphs {
+            if glyph.width == 0 || glyph.height == 0 {
+                continue;
+            }
+            min_x = min_x.min(glyph.x);
+            min_y = min_y.min(glyph.y);
+            max_x = max_x.max(glyph.x + glyph.width as f32);
+            max_y = max_y.max(glyph.y + glyph.height as f32);
+        }
+
+        if min_x == f32::MAX || min_y == f32::MAX {
+            return None;
+        }
+
+        let padding = self.outline_padding();
+        let width = (max_x - min_x).ceil().max(1.0);
+        let height = (max_y - min_y).ceil().max(1.0);
+
+        Some(TextLayout {
+            glyphs,
+            bounds: TextBounds {
+                min_x,
+                min_y,
+                width,
+                height,
+            },
+            texture_width: width as u32 + padding * 2,
+            texture_height: height as u32 + padding * 2,
+            padding,
+        })
+    }
+
+    fn build_glyph_bitmap(&self, layout: &TextLayout, color: [u8; 4]) -> Result<Vec<u8>> {
+        let font = self
+            .font
+            .as_ref()
+            .context("text renderer font has not been loaded")?;
+        let mut pixels = vec![0u8; layout.texture_width as usize * layout.texture_height as usize * 4];
+
+        for glyph in &layout.glyphs {
+            if glyph.width == 0 || glyph.height == 0 {
+                continue;
+            }
+
+            let (_, bitmap) = font.rasterize_config(glyph.key);
+            let dest_x = (glyph.x - layout.bounds.min_x).round() as i32 + layout.padding as i32;
+            let dest_y = (glyph.y - layout.bounds.min_y).round() as i32 + layout.padding as i32;
+            blit_glyph(
+                &mut pixels,
+                layout.texture_width,
+                layout.texture_height,
+                glyph.width,
+                glyph.height,
+                dest_x,
+                dest_y,
+                &bitmap,
+                color,
+            );
+        }
+
+        Ok(pixels)
+    }
+
+    fn create_texture_resources(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+        label: &str,
+    ) -> (wgpu::Texture, wgpu::TextureView) {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("subtitle texture"),
-            size: tex_size,
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
         queue.write_texture(
-            wgpu::ImageCopyTexture { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            &img,
-            wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some((4 * width) as u32), rows_per_image: Some(height as u32) },
-            tex_size,
+            wgpu::ImageCopyTexture {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        (texture, view)
+    }
+
+    fn create_layer(
+        &self,
+        device: &wgpu::Device,
+        screen_x: f32,
+        screen_y: f32,
+        width: f32,
+        height: f32,
+        texture_view: &wgpu::TextureView,
+    ) -> PreparedLayer {
+        let vertices = quad_vertices(self.screen_size, screen_x, screen_y, width, height);
+        let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("subtitle bind group"),
+            label: Some("text layer bind group"),
             layout: &self.bind_group_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         });
 
-        // Quad positioned near bottom (as before)
-        let screen_w = screen_size.0 as f32; let screen_h = screen_size.1 as f32;
-        let ndc_w = (width as f32 / screen_w) * 2.0; let ndc_h = (height as f32 / screen_h) * 2.0;
-        let margin_px = (screen_h * 0.04).min(80.0);
-        let y_px = margin_px;
-        let x0 = -ndc_w * 0.5; let y0 = -1.0 + (y_px / screen_h) * 2.0; let x1 = x0 + ndc_w; let y1 = y0 + ndc_h;
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("text vertex buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("text index buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
-        #[repr(C)] #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)] struct TV { position: [f32;2], uv: [f32;2] }
-        let verts: Vec<TV> = vec![ TV { position: [x0, y1], uv: [0.0,0.0] }, TV { position: [x1, y1], uv: [1.0,0.0] }, TV { position: [x1, y0], uv: [1.0,1.0] }, TV { position: [x0, y0], uv: [0.0,1.0] } ];
-        let indices: Vec<u16> = vec![0,1,2, 0,2,3];
-
-        let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("subtitle vb"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
-        let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("subtitle ib"), contents: bytemuck::cast_slice(&indices), usage: wgpu::BufferUsages::INDEX });
-
-        self.prepared_subtitles.push(PreparedText { texture, texture_view: view, bind_group, vertex_buffer: vb, index_buffer: ib, index_count: indices.len() as u32 });
-        Ok(())
-    }
-
-    /// Queue a menu text entry at normal button label size (6% of screen height).
-    pub fn queue_menu_text(&mut self, text: &str, device: &wgpu::Device, queue: &wgpu::Queue, screen_size: (u32,u32), center_y_px_top: f32) -> Result<()> {
-        let px_height = (screen_size.1 as f32 * 0.06).max(14.0);
-        self.queue_text_internal(text, device, queue, screen_size, center_y_px_top, px_height)
-    }
-
-    /// Queue a menu text entry at a custom size (scale relative to normal 6% height).
-    pub fn queue_menu_text_sized(&mut self, text: &str, device: &wgpu::Device, queue: &wgpu::Queue, screen_size: (u32,u32), center_y_px_top: f32, scale: f32) -> Result<()> {
-        let px_height = (screen_size.1 as f32 * 0.06 * scale).max(10.0);
-        self.queue_text_internal(text, device, queue, screen_size, center_y_px_top, px_height)
-    }
-
-    fn queue_text_internal(&mut self, text: &str, device: &wgpu::Device, queue: &wgpu::Queue, screen_size: (u32,u32), center_y_px_top: f32, px_height: f32) -> Result<()> {
-        let font = match self.font.as_ref() { Some(f) => f, None => return Ok(()) };
-
-        // Rasterize all glyphs once; reuse alpha mask for both shadow and main layers.
-        let mut glyphs: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::new();
-        let mut total_w: usize = 0;
-        let mut max_h:   usize = 0;
-        for ch in text.chars() {
-            let (m, bm) = font.rasterize(ch, px_height);
-            total_w += m.width.max(1) + 2;
-            max_h    = max_h.max(m.height);
-            glyphs.push((m, bm));
+        PreparedLayer {
+            bind_group,
+            vertex_buffer,
+            index_buffer,
+            index_count: indices.len() as u32,
         }
-        if total_w == 0 || max_h == 0 { return Ok(()); }
-        let tw = total_w; let th = max_h;
+    }
 
-        // Produce an RGBA pixel buffer with a given solid foreground colour (glyph alpha mask).
-        let rasterize = |r: u8, g: u8, b: u8| -> Vec<u8> {
-            let mut img = vec![0u8; tw * th * 4];
-            let mut cur = 0usize;
-            for (gm, bm) in &glyphs {
-                let gw = gm.width as usize; let gh = gm.height as usize;
-                for py in 0..gh {
-                    for px in 0..gw {
-                        let dx = cur + px; let dy = py;
-                        if dx >= tw || dy >= th { continue; }
-                        let d = (dy * tw + dx) * 4;
-                        img[d] = r; img[d+1] = g; img[d+2] = b;
-                        img[d+3] = bm[py * gw + px];
-                    }
+    fn outline_offsets(&self) -> Vec<(i32, i32)> {
+        let radius = self.outline_thickness_px.round() as i32;
+        if radius <= 0 {
+            return Vec::new();
+        }
+
+        let mut offsets = Vec::new();
+        let limit = (self.outline_thickness_px * self.outline_thickness_px).ceil() as i32;
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                if dx == 0 && dy == 0 {
+                    continue;
                 }
-                cur += gw.max(1) + 2;
+                if dx * dx + dy * dy <= limit {
+                    offsets.push((dx, dy));
+                }
             }
-            img
-        };
-
-        let sw = screen_size.0 as f32; let sh = screen_size.1 as f32;
-        let nw = (tw as f32 / sw) * 2.0;
-        let nh = (th as f32 / sh) * 2.0;
-        let cy  = 1.0 - (center_y_px_top / sh) * 2.0;
-        let bx  = -nw * 0.5;
-        let by0 = cy - nh * 0.5; let by1 = cy + nh * 0.5;
-        // 3-pixel drop shadow in NDC units
-        let sdx =  3.0 / sw * 2.0;
-        let sdy = -3.0 / sh * 2.0;
-
-        #[repr(C)] #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-        struct TV { position: [f32;2], uv: [f32;2] }
-
-        // Helper: upload one text layer as PreparedText.
-        // Takes explicit refs so it does not borrow `self` (avoiding double-borrow).
-        let make_layer = |img: &[u8], x_off: f32, y_off: f32,
-                          device: &wgpu::Device, queue: &wgpu::Queue,
-                          layout: &wgpu::BindGroupLayout,
-                          sampler: &wgpu::Sampler| -> PreparedText {
-            let tsz = wgpu::Extent3d { width: tw as u32, height: th as u32, depth_or_array_layers: 1 };
-            let tex = device.create_texture(&wgpu::TextureDescriptor {
-                label: None, size: tsz, mip_level_count: 1, sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            queue.write_texture(
-                wgpu::ImageCopyTexture { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                img,
-                wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some((4 * tw) as u32), rows_per_image: Some(th as u32) },
-                tsz,
-            );
-            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-            let bg   = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None, layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
-                ],
-            });
-            let x0 = bx + x_off; let x1 = x0 + nw;
-            let y0s = by0 + y_off; let y1s = by1 + y_off;
-            let verts = [
-                TV { position: [x0, y1s], uv: [0.0, 0.0] },
-                TV { position: [x1, y1s], uv: [1.0, 0.0] },
-                TV { position: [x1, y0s], uv: [1.0, 1.0] },
-                TV { position: [x0, y0s], uv: [0.0, 1.0] },
-            ];
-            let idxs: [u16; 6] = [0, 1, 2, 0, 2, 3];
-            let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
-            let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&idxs),  usage: wgpu::BufferUsages::INDEX  });
-            PreparedText { texture: tex, texture_view: view, bind_group: bg, vertex_buffer: vb, index_buffer: ib, index_count: 6 }
-        };
-
-        // Shadow (dark, offset) is pushed first so it renders underneath.
-        let shadow_img = rasterize(18, 18, 24);
-        let shadow_pt  = make_layer(&shadow_img, sdx, sdy, device, queue, &self.bind_group_layout, &self.sampler);
-        // Main white layer on top.
-        let main_img   = rasterize(255, 255, 255);
-        let main_pt    = make_layer(&main_img, 0.0, 0.0, device, queue, &self.bind_group_layout, &self.sampler);
-        self.prepared_menu_texts.push(shadow_pt);
-        self.prepared_menu_texts.push(main_pt);
-        Ok(())
+        }
+        offsets
     }
 
-    pub fn draw_menu<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
-        if self.prepared_menu_texts.is_empty() { return; }
-        rpass.set_pipeline(&self.pipeline);
-        for prepared in &self.prepared_menu_texts {
-            rpass.set_bind_group(0, &prepared.bind_group, &[]);
-            rpass.set_vertex_buffer(0, prepared.vertex_buffer.slice(..));
-            rpass.set_index_buffer(prepared.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            rpass.draw_indexed(0..prepared.index_count, 0, 0..1);
+    fn outline_padding(&self) -> u32 {
+        self.outline_thickness_px.ceil() as u32 + 1
+    }
+
+    fn pixel_height(&self, scale: f32) -> f32 {
+        let screen_factor = (self.screen_size.1 as f32 / 720.0).max(1.0);
+        (BASE_TEXT_PX * scale * screen_factor).round().max(MIN_TEXT_PX)
+    }
+}
+
+fn quad_vertices(screen_size: (u32, u32), screen_x: f32, screen_y: f32, width: f32, height: f32) -> [TextVertex; 4] {
+    let screen_w = screen_size.0.max(1) as f32;
+    let screen_h = screen_size.1.max(1) as f32;
+
+    let left = screen_x.round();
+    let top = screen_y.round();
+    let right = (screen_x + width).round();
+    let bottom = (screen_y + height).round();
+
+    let left_ndc = left / screen_w * 2.0 - 1.0;
+    let right_ndc = right / screen_w * 2.0 - 1.0;
+    let top_ndc = 1.0 - top / screen_h * 2.0;
+    let bottom_ndc = 1.0 - bottom / screen_h * 2.0;
+
+    [
+        TextVertex {
+            position: [left_ndc, top_ndc],
+            uv: [0.0, 0.0],
+        },
+        TextVertex {
+            position: [right_ndc, top_ndc],
+            uv: [1.0, 0.0],
+        },
+        TextVertex {
+            position: [right_ndc, bottom_ndc],
+            uv: [1.0, 1.0],
+        },
+        TextVertex {
+            position: [left_ndc, bottom_ndc],
+            uv: [0.0, 1.0],
+        },
+    ]
+}
+
+fn blit_glyph(
+    pixels: &mut [u8],
+    dest_width: u32,
+    dest_height: u32,
+    glyph_width: usize,
+    glyph_height: usize,
+    dest_x: i32,
+    dest_y: i32,
+    bitmap: &[u8],
+    color: [u8; 4],
+) {
+    for row in 0..glyph_height {
+        for col in 0..glyph_width {
+            let alpha = bitmap[row * glyph_width + col];
+            if alpha == 0 {
+                continue;
+            }
+
+            let x = dest_x + col as i32;
+            let y = dest_y + row as i32;
+            if x < 0 || y < 0 || x >= dest_width as i32 || y >= dest_height as i32 {
+                continue;
+            }
+
+            let pixel_index = (y as usize * dest_width as usize + x as usize) * 4;
+            let src_alpha = alpha.saturating_mul(color[3]) / 255;
+            let src_alpha = (((src_alpha as f32 / 255.0).powf(0.82) * 255.0).round() as u8)
+                .max(src_alpha);
+            if src_alpha > pixels[pixel_index + 3] {
+                pixels[pixel_index] = color[0];
+                pixels[pixel_index + 1] = color[1];
+                pixels[pixel_index + 2] = color[2];
+                pixels[pixel_index + 3] = src_alpha;
+            }
         }
     }
-
-    pub fn draw_subtitles<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
-        if self.prepared_subtitles.is_empty() { return; }
-        rpass.set_pipeline(&self.pipeline);
-        for prepared in &self.prepared_subtitles {
-            rpass.set_bind_group(0, &prepared.bind_group, &[]);
-            rpass.set_vertex_buffer(0, prepared.vertex_buffer.slice(..));
-            rpass.set_index_buffer(prepared.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            rpass.draw_indexed(0..prepared.index_count, 0, 0..1);
-        }
-    }
-
-    pub fn clear_menu_prepared(&mut self) { self.prepared_menu_texts.clear(); }
-    pub fn clear_subtitle_prepared(&mut self) { self.prepared_subtitles.clear(); }
 }

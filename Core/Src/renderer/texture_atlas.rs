@@ -23,20 +23,28 @@ impl AtlasTexture {
 
         // Build atlas image from file, composed tiles, or fallback solid colour.
         let mut atlas_img: RgbaImage = 'load: {
+            // Prefer composing from per-block textures. This guarantees every slot
+            // is resampled to an exact 16x16 tile with nearest filtering and avoids
+            // stretching an arbitrary external atlas into the engine's fixed layout.
+            if let Some(composed) = Self::compose_from_blocks() {
+                break 'load composed;
+            }
+
             for atlas_path in atlas_paths {
                 if let Ok(img) = image::open(atlas_path) {
                     let rgba = img.to_rgba8();
                     let (w, h) = img.dimensions();
-                    break 'load if w != 512 || h != 320 {
-                        let dyn_img = image::DynamicImage::ImageRgba8(rgba);
-                        image::imageops::resize(&dyn_img, 512, 320, image::imageops::FilterType::Nearest)
+                    if w == 512 && h == 320 {
+                        break 'load rgba;
                     } else {
-                        rgba
-                    };
+                        eprintln!(
+                            "Ignoring atlas {} with size {}x{}; expected exact 512x320 for a 32x20 grid of 16x16 tiles",
+                            atlas_path.display(),
+                            w,
+                            h
+                        );
+                    }
                 }
-            }
-            if let Some(composed) = Self::compose_from_blocks() {
-                break 'load composed;
             }
             // Last-resort fallback: solid white checkerboard
             let mut fb = RgbaImage::new(512, 320);
@@ -88,9 +96,9 @@ impl AtlasTexture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
@@ -131,9 +139,9 @@ impl AtlasTexture {
 
         let view    = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter:     wgpu::FilterMode::Nearest,
             min_filter:     wgpu::FilterMode::Nearest,
             mipmap_filter:  wgpu::FilterMode::Nearest,
@@ -214,8 +222,11 @@ impl AtlasTexture {
         ])
     }
 
+    /// Builds the atlas image by loading each texture listed in `ATLAS_TILES`.
+    /// Each PNG is rescaled to exactly 16×16 and placed at its designated (col, row) slot.
+    /// Missing files get a magenta checkerboard placeholder.
     fn compose_from_blocks() -> Option<RgbaImage> {
-        let possible_roots = vec![
+        let possible_roots = [
             Path::new("Assets/Blocks").to_path_buf(),
             Path::new("../Assets/Blocks").to_path_buf(),
             Path::new("../../Assets/Blocks").to_path_buf(),
@@ -223,144 +234,153 @@ impl AtlasTexture {
             Path::new("../../../../Assets/Blocks").to_path_buf(),
         ];
 
-        let in_root = possible_roots.into_iter().find(|path| path.exists())?;
-        // Create an atlas large enough for common blocks (32x32 grid = 512x512 @ 16x16 per tile)
-        let mut atlas = RgbaImage::new(512, 320);
+        let blocks_root = possible_roots.into_iter().find(|p| p.exists())?;
+        let mut atlas   = RgbaImage::new(512, 320);
+        let mut placed  = 0usize;
 
-        // Map block names to atlas positions (col, row)
-        let src_names = vec![
-            ((0,0), "grass_block_top"),
-            ((1,0), "grass_block_side"),
-            ((3,0), "dirt"),
-            ((4,0), "stone"),
-            ((5,0), "sand"),
-            ((6,0), "gravel"),
-            ((7,0), "snow"),
-            ((8,0), "cobblestone"),
-            ((9,0), "bedrock"),
-            ((10,0), "water_still"),
-            ((11,0), "water_flow"),
-            ((12,0), "oak_log"),
-            ((13,0), "oak_log_top"),
-            ((14,0), "oak_leaves"),
-            ((15,0), "lava_still"),
-            ((16,0), "lava_flow"),
-            
-            ((8,1), "stone_bricks"),
-            ((11,1), "andesite"),
-            ((14,1), "netherrack"),
-            ((15,1), "glowstone"),
-            ((0,1), "coal_ore"),
-            ((1,1), "iron_ore"),
-            ((2,1), "gold_ore"),
-            ((3,1), "diamond_ore"),
-            ((4,1), "emerald_ore"),
-            ((5,1), "redstone_ore"),
-            ((6,1), "copper_ore"),
-            ((7,1), "lapis_ore"),
-            
-            ((0,2), "deepslate"),
-            ((1,2), "deepslate_coal_ore"),
-            ((2,2), "deepslate_iron_ore"),
-            ((3,2), "deepslate_copper_ore"),
-            ((4,2), "deepslate_gold_ore"),
-            ((5,2), "deepslate_diamond_ore"),
-            ((6,2), "deepslate_emerald_ore"),
-            ((7,2), "deepslate_lapis_ore"),
-            ((8,2), "deepslate_redstone_ore"),
-            ((9,2), "deepslate_bricks"),
-            ((10,2), "tuff"),
-            ((11,2), "tuff_bricks"),
-            ((12,2), "obsidian"),
-            ((13,2), "crying_obsidian"),
-            ((14,2), "end_stone"),
-            ((15,2), "end_stone_bricks"),
-            
-            ((0,3), "oak_planks"),
-            ((1,3), "spruce_log"),
-            ((2,3), "birch_log"),
-            ((3,3), "jungle_log"),
-            ((4,3), "acacia_log"),
-            ((5,3), "dark_oak_log"),
-            ((6,3), "mangrove_log"),
-            ((7,3), "pale_oak_log"),
-            ((8,3), "spruce_leaves"),
-            ((9,3), "birch_leaves"),
-            ((10,3), "jungle_leaves"),
-            ((11,3), "acacia_leaves"),
-            ((12,3), "dark_oak_leaves"),
-            ((13,3), "mangrove_leaves"),
-            ((14,3), "pale_oak_leaves"),
-            ((15,3), "azalea_leaves"),
-            
-            ((0,4), "clay"),
-            ((1,4), "mycelium_top"),
-            ((2,4), "podzol_top"),
-            ((3,4), "rooted_dirt"),
-            ((4,4), "moss_block"),
-            ((5,4), "mud"),
-            ((6,4), "packed_mud"),
-            ((7,4), "muddy_mangrove_roots_top"),
-            ((8,4), "coarse_dirt"),
-            ((9,4), "farmland"),
-            ((10,4), "farmland_moist"),
-            ((11,4), "soul_sand"),
-            ((12,4), "soul_soil"),
-            ((13,4), "nether_wart_block"),
-            ((14,4), "warped_wart_block"),
-            ((15,4), "shroomlight"),
-        ];
-
-        let mut placed = 0;
-        for ((col, row), name) in &src_names {
-            // Try multiple variations of the filename
-            let paths = vec![
-                in_root.join(format!("{}.png", name)),
-                in_root.join(format!("{}_1.png", name)),
-                in_root.join(format!("{}_2.png", name)),
-                in_root.join(format!("{}_top.png", name)),
+        for &(col, row, name) in ATLAS_TILES {
+            // Try the base name and common variant suffixes in order.
+            let candidates = [
+                blocks_root.join(format!("{}.png", name)),
+                blocks_root.join(format!("{}_1.png", name)),
+                blocks_root.join(format!("{}_2.png", name)),
+                blocks_root.join(format!("{}_top.png", name)),
             ];
-            
+
             let mut loaded = false;
-            for path in paths {
-                if let Ok(img) = image::open(&path) {
+            for path in &candidates {
+                if let Ok(img) = image::open(path) {
                     let tile = img.resize_exact(16, 16, image::imageops::FilterType::Nearest).to_rgba8();
-                    for y in 0..16 {
-                        for x in 0..16 {
-                            let px = tile.get_pixel(x, y);
-                            atlas.put_pixel((col * 16 + x) as u32, (row * 16 + y) as u32, *px);
+                    for ty in 0u32..16 {
+                        for tx in 0u32..16 {
+                            atlas.put_pixel(col * 16 + tx, row * 16 + ty, *tile.get_pixel(tx, ty));
                         }
                     }
-                    loaded = true;
+                    loaded  = true;
                     placed += 1;
                     break;
                 }
             }
-            
+
             if !loaded {
-                eprintln!("⚠️ Could not load texture for block: {}", name);
-                // Fill with placeholder color (checkerboard pattern)
-                for y in 0..16 {
-                    for x in 0..16 {
-                        let pattern = ((x / 2 + y / 2) % 2) * 128;
-                        atlas.put_pixel(
-                            (col * 16 + x) as u32, 
-                            (row * 16 + y) as u32, 
-                            image::Rgba([128 + pattern as u8, 64, 128 + pattern as u8, 255])
-                        );
+                eprintln!("⚠️  Missing texture: {}", name);
+                for ty in 0u32..16 {
+                    for tx in 0u32..16 {
+                        let c = if (tx / 2 + ty / 2) % 2 == 0 { 255u8 } else { 80 };
+                        atlas.put_pixel(col * 16 + tx, row * 16 + ty, image::Rgba([c, 0, c, 255]));
                     }
                 }
             }
         }
-        
-        eprintln!("✓ Successfully loaded {}/{} block textures to atlas", placed, src_names.len());
+
+        eprintln!("✓ Atlas built: {}/{} textures loaded", placed, ATLAS_TILES.len());
         Some(atlas)
     }
 }
 
-const ATLAS_W: f32 = 512.0;  // Updated: 32 columns x 16px = 512px
-const ATLAS_H: f32 = 320.0;  // Updated: 20 rows x 16px = 320px (we use ~5 rows)
+const ATLAS_W: f32 = 512.0;  // 32 columns × 16 px
+const ATLAS_H: f32 = 320.0;  // 20 rows   × 16 px  (640 tile slots total)
 const TILE:    f32 = 16.0;
+
+// ── Atlas tile registry ───────────────────────────────────────────────────────
+// Single source of truth: (col, row, texture_file_base_name)
+// The texture file "name.png" (and fallbacks "name_1.png", "name_top.png") is
+// looked up in Assets/Blocks/ at runtime.  Positions are STABLE — never reorder.
+pub const ATLAS_TILES: &[(u32, u32, &str)] = &[
+    // Row 0 — core surface/vegetation
+    ( 0, 0, "grass_block_top"),
+    ( 1, 0, "grass_block_side"),
+    ( 2, 0, "grass_block_side"),   // duplicate side slot kept for alignment
+    ( 3, 0, "dirt"),
+    ( 4, 0, "stone"),
+    ( 5, 0, "sand"),
+    ( 6, 0, "gravel"),
+    ( 7, 0, "snow"),
+    ( 8, 0, "cobblestone"),
+    ( 9, 0, "bedrock"),
+    (10, 0, "water_still"),        // procedurally overwritten by inject_water_tiles
+    (11, 0, "water_flow"),         // procedurally overwritten
+    (12, 0, "oak_log"),            // tree_trunk side  (texture: oak_log.png)
+    (13, 0, "oak_log_top"),        // tree_trunk top
+    (14, 0, "oak_leaves"),         // tree_leaves      (texture: oak_leaves.png)
+    (15, 0, "lava_still"),
+    (16, 0, "lava_flow"),
+    // Row 1 — ores + stone variants
+    ( 0, 1, "coal_ore"),
+    ( 1, 1, "iron_ore"),
+    ( 2, 1, "gold_ore"),
+    ( 3, 1, "diamond_ore"),
+    ( 4, 1, "emerald_ore"),
+    ( 5, 1, "redstone_ore"),
+    ( 6, 1, "copper_ore"),
+    ( 7, 1, "lapis_ore"),
+    ( 8, 1, "stone_bricks"),
+    ( 9, 1, "mossy_stone_bricks"),
+    (10, 1, "cracked_stone_bricks"),
+    (11, 1, "andesite"),
+    (12, 1, "granite"),
+    (13, 1, "diorite"),
+    (14, 1, "netherrack"),         // nether_rock (texture: netherrack.png)
+    (15, 1, "glowstone"),          // glow_rock   (texture: glowstone.png)
+    // Row 2 — slate/deep blocks
+    ( 0, 2, "deepslate"),          // slate_rock        (texture: deepslate.png)
+    ( 1, 2, "deepslate_coal_ore"), // slate_coal_ore
+    ( 2, 2, "deepslate_iron_ore"),
+    ( 3, 2, "deepslate_copper_ore"),
+    ( 4, 2, "deepslate_gold_ore"),
+    ( 5, 2, "deepslate_diamond_ore"), // slate_diamond_ore
+    ( 6, 2, "deepslate_emerald_ore"),
+    ( 7, 2, "deepslate_lapis_ore"),
+    ( 8, 2, "deepslate_redstone_ore"),
+    ( 9, 2, "deepslate_bricks"),
+    (10, 2, "tuff"),
+    (11, 2, "tuff_bricks"),
+    (12, 2, "obsidian"),
+    (13, 2, "crying_obsidian"),
+    (14, 2, "end_stone"),
+    (15, 2, "end_stone_bricks"),
+    // Row 3 — wood / leaf variants
+    ( 0, 3, "oak_planks"),
+    ( 1, 3, "spruce_log"),
+    ( 2, 3, "birch_log"),
+    ( 3, 3, "jungle_log"),
+    ( 4, 3, "acacia_log"),
+    ( 5, 3, "dark_oak_log"),
+    ( 6, 3, "mangrove_log"),
+    ( 7, 3, "pale_oak_log"),
+    ( 8, 3, "spruce_leaves"),
+    ( 9, 3, "birch_leaves"),
+    (10, 3, "jungle_leaves"),
+    (11, 3, "acacia_leaves"),
+    (12, 3, "dark_oak_leaves"),
+    (13, 3, "mangrove_leaves"),
+    (14, 3, "pale_oak_leaves"),
+    (15, 3, "azalea_leaves"),
+    // Row 4 — earth / nether variants
+    ( 0, 4, "clay"),
+    ( 1, 4, "mycelium_top"),
+    ( 2, 4, "podzol_top"),
+    ( 3, 4, "rooted_dirt"),
+    ( 4, 4, "moss_block"),
+    ( 5, 4, "mud"),
+    ( 6, 4, "packed_mud"),
+    ( 7, 4, "muddy_mangrove_roots_top"),
+    ( 8, 4, "coarse_dirt"),
+    ( 9, 4, "farmland"),
+    (10, 4, "farmland_moist"),
+    (11, 4, "soul_sand"),
+    (12, 4, "soul_soil"),
+    (13, 4, "nether_wart_block"),
+    (14, 4, "warped_wart_block"),
+    (15, 4, "shroomlight"),
+    // Row 5 — surface decoration blocks
+    ( 0, 5, "bush"),
+    ( 1, 5, "short_grass"),
+    ( 2, 5, "dandelion"),
+    ( 3, 5, "dead_bush"),
+    ( 4, 5, "cactus_side"),
+    ( 5, 5, "cactus_top"),
+];
 
 #[derive(Clone, Copy, Debug)]
 pub struct TileUV {
@@ -390,7 +410,31 @@ impl TileUV {
     }
 }
 
-// Tile accessors
+fn normalize_texture_name(name: &str) -> &str {
+    let trimmed = name.trim_start_matches('#');
+    let without_namespace = trimmed.strip_prefix("minecraft:").unwrap_or(trimmed);
+    without_namespace.strip_prefix("block/").unwrap_or(without_namespace)
+}
+
+pub fn tile_by_texture_name(name: &str, is_top: bool) -> Option<TileUV> {
+    let normalized = normalize_texture_name(name);
+    ATLAS_TILES
+        .iter()
+        .find(|(_, _, atlas_name)| *atlas_name == normalized)
+        .map(|&(col, row, _)| {
+            if is_top {
+                TileUV::new_top(col, row)
+            } else {
+                TileUV::new(col, row)
+            }
+        })
+}
+
+// ── Tile accessor functions ───────────────────────────────────────────────────
+// Names match the block registry names (not Minecraft names).
+// Atlas positions MUST match ATLAS_TILES above.
+
+// Row 0
 pub fn tile_grass_top()           -> TileUV { TileUV::new_top( 0, 0) }
 pub fn tile_grass_side()          -> TileUV { TileUV::new( 1, 0) }
 pub fn tile_dirt()                -> TileUV { TileUV::new( 3, 0) }
@@ -402,17 +446,13 @@ pub fn tile_cobblestone()         -> TileUV { TileUV::new( 8, 0) }
 pub fn tile_bedrock()             -> TileUV { TileUV::new( 9, 0) }
 pub fn tile_water()               -> TileUV { TileUV::new(10, 0) }
 pub fn tile_water_flow()          -> TileUV { TileUV::new(11, 0) }
-pub fn tile_oak_log_side()        -> TileUV { TileUV::new(12, 0) }
-pub fn tile_oak_log_top()         -> TileUV { TileUV::new_top(13, 0) }
-pub fn tile_oak_leaves()          -> TileUV { TileUV::new(14, 0) }
+pub fn tile_tree_trunk_side()     -> TileUV { TileUV::new(12, 0) }   // oak_log.png
+pub fn tile_tree_trunk_top()      -> TileUV { TileUV::new_top(13, 0) } // oak_log_top.png
+pub fn tile_tree_leaves()         -> TileUV { TileUV::new(14, 0) }   // oak_leaves.png
 pub fn tile_lava_still()          -> TileUV { TileUV::new(15, 0) }
 pub fn tile_lava_flow()           -> TileUV { TileUV::new(16, 0) }
 
-pub fn tile_stone_bricks()        -> TileUV { TileUV::new( 8, 1) }
-pub fn tile_andesite()            -> TileUV { TileUV::new(11, 1) }
-pub fn tile_netherrack()          -> TileUV { TileUV::new(14, 1) }
-pub fn tile_glowstone()           -> TileUV { TileUV::new(15, 1) }
-
+// Row 1
 pub fn tile_coal_ore()            -> TileUV { TileUV::new( 0, 1) }
 pub fn tile_iron_ore()            -> TileUV { TileUV::new( 1, 1) }
 pub fn tile_gold_ore()            -> TileUV { TileUV::new( 2, 1) }
@@ -421,13 +461,20 @@ pub fn tile_emerald_ore()         -> TileUV { TileUV::new( 4, 1) }
 pub fn tile_redstone_ore()        -> TileUV { TileUV::new( 5, 1) }
 pub fn tile_copper_ore()          -> TileUV { TileUV::new( 6, 1) }
 pub fn tile_lapis_ore()           -> TileUV { TileUV::new( 7, 1) }
+pub fn tile_stone_bricks()        -> TileUV { TileUV::new( 8, 1) }
+pub fn tile_andesite()            -> TileUV { TileUV::new(11, 1) }
+pub fn tile_granite()             -> TileUV { TileUV::new(12, 1) }
+pub fn tile_diorite()             -> TileUV { TileUV::new(13, 1) }
+pub fn tile_nether_rock()         -> TileUV { TileUV::new(14, 1) }   // netherrack.png
+pub fn tile_glow_rock()           -> TileUV { TileUV::new(15, 1) }   // glowstone.png
 
-pub fn tile_deepslate()           -> TileUV { TileUV::new( 0, 2) }
-pub fn tile_deepslate_coal_ore()  -> TileUV { TileUV::new( 1, 2) }
+// Row 2
+pub fn tile_slate_rock()          -> TileUV { TileUV::new( 0, 2) }   // deepslate.png
+pub fn tile_slate_coal_ore()      -> TileUV { TileUV::new( 1, 2) }   // deepslate_coal_ore.png
 pub fn tile_deepslate_iron_ore()  -> TileUV { TileUV::new( 2, 2) }
 pub fn tile_deepslate_copper_ore()-> TileUV { TileUV::new( 3, 2) }
 pub fn tile_deepslate_gold_ore()  -> TileUV { TileUV::new( 4, 2) }
-pub fn tile_deepslate_diamond()   -> TileUV { TileUV::new( 5, 2) }
+pub fn tile_slate_diamond_ore()   -> TileUV { TileUV::new( 5, 2) }   // deepslate_diamond_ore.png
 pub fn tile_deepslate_emerald()   -> TileUV { TileUV::new( 6, 2) }
 pub fn tile_deepslate_lapis()     -> TileUV { TileUV::new( 7, 2) }
 pub fn tile_deepslate_redstone()  -> TileUV { TileUV::new( 8, 2) }
@@ -439,6 +486,7 @@ pub fn tile_crying_obsidian()     -> TileUV { TileUV::new(13, 2) }
 pub fn tile_end_stone()           -> TileUV { TileUV::new(14, 2) }
 pub fn tile_end_stone_bricks()    -> TileUV { TileUV::new(15, 2) }
 
+// Row 3
 pub fn tile_oak_planks()          -> TileUV { TileUV::new( 0, 3) }
 pub fn tile_spruce_log_side()     -> TileUV { TileUV::new( 1, 3) }
 pub fn tile_birch_log_side()      -> TileUV { TileUV::new( 2, 3) }
@@ -456,6 +504,7 @@ pub fn tile_mangrove_leaves()     -> TileUV { TileUV::new(13, 3) }
 pub fn tile_pale_oak_leaves()     -> TileUV { TileUV::new(14, 3) }
 pub fn tile_azalea_leaves()       -> TileUV { TileUV::new(15, 3) }
 
+// Row 4
 pub fn tile_clay()                -> TileUV { TileUV::new( 0, 4) }
 pub fn tile_mycelium()            -> TileUV { TileUV::new_top( 1, 4) }
 pub fn tile_podzol()              -> TileUV { TileUV::new_top( 2, 4) }
@@ -472,3 +521,11 @@ pub fn tile_soul_soil()           -> TileUV { TileUV::new(12, 4) }
 pub fn tile_nether_wart_block()   -> TileUV { TileUV::new(13, 4) }
 pub fn tile_warped_wart_block()   -> TileUV { TileUV::new(14, 4) }
 pub fn tile_shroomlight()         -> TileUV { TileUV::new(15, 4) }
+
+// Row 5 — vegetation decoration
+pub fn tile_bush()                -> TileUV { TileUV::new( 0, 5) }   // bush.png
+pub fn tile_tall_grass()          -> TileUV { TileUV::new( 1, 5) }   // short_grass.png
+pub fn tile_flower()              -> TileUV { TileUV::new( 2, 5) }   // dandelion.png
+pub fn tile_dead_bush()           -> TileUV { TileUV::new( 3, 5) }   // dead_bush.png
+pub fn tile_cactus_side()         -> TileUV { TileUV::new( 4, 5) }   // cactus_side.png
+pub fn tile_cactus_top()          -> TileUV { TileUV::new_top( 5, 5) } // cactus_top.png

@@ -1,43 +1,92 @@
-use cgmath::{Vector3, InnerSpace};
+use cgmath::{InnerSpace, Vector3};
 
-#[derive(Debug, Clone, Copy)]
+use crate::world::block::BlockType;
+use crate::world::World;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RaycastHit {
-    pub pos: Vector3<i32>,
-    pub face: Vector3<i32>,
+    pub block_pos: Vector3<i32>,
+    pub face_normal: Vector3<i32>,
+    pub block_type: BlockType,
 }
 
-pub fn raycast(origin: Vector3<f32>, direction: Vector3<f32>, max_dist: f32, world: &crate::world::World) -> Option<RaycastHit> {
-    let mut curr = origin;
-    let step = direction.normalize() * 0.1;
-    let mut dist_traveled = 0.0;
+pub(crate) fn raycast_solid_block(
+    origin: Vector3<f32>,
+    direction: Vector3<f32>,
+    max_dist: f32,
+    world: &World,
+) -> Option<RaycastHit> {
+    if direction.magnitude2() <= f32::EPSILON {
+        return None;
+    }
 
-    while dist_traveled < max_dist {
-        let bx = curr.x.floor() as i32;
-        let by = curr.y.floor() as i32;
-        let bz = curr.z.floor() as i32;
+    let dir = direction.normalize();
+    let mut bx = origin.x.floor() as i32;
+    let mut by = origin.y.floor() as i32;
+    let mut bz = origin.z.floor() as i32;
 
-        if world.get_block(bx, by, bz).is_opaque() {
-            let face = determine_face(curr, bx, by, bz);
-            return Some(RaycastHit { pos: Vector3::new(bx, by, bz), face });
+    let step_x = dir.x.signum() as i32;
+    let step_y = dir.y.signum() as i32;
+    let step_z = dir.z.signum() as i32;
+
+    let inv_x = if dir.x.abs() > f32::EPSILON { 1.0 / dir.x.abs() } else { f32::INFINITY };
+    let inv_y = if dir.y.abs() > f32::EPSILON { 1.0 / dir.y.abs() } else { f32::INFINITY };
+    let inv_z = if dir.z.abs() > f32::EPSILON { 1.0 / dir.z.abs() } else { f32::INFINITY };
+
+    let mut side_x = initial_side_distance(origin.x, bx, dir.x, inv_x);
+    let mut side_y = initial_side_distance(origin.y, by, dir.y, inv_y);
+    let mut side_z = initial_side_distance(origin.z, bz, dir.z, inv_z);
+
+    let current = world.get_block(bx, by, bz);
+    if current.is_solid() {
+        return Some(RaycastHit {
+            block_pos: Vector3::new(bx, by, bz),
+            face_normal: Vector3::new(0, 0, 0),
+            block_type: current,
+        });
+    }
+
+    loop {
+        let (travel, face_normal) = if side_x <= side_y && side_x <= side_z {
+            bx += step_x;
+            let dist = side_x;
+            side_x += inv_x;
+            (dist, Vector3::new(-step_x, 0, 0))
+        } else if side_y <= side_z {
+            by += step_y;
+            let dist = side_y;
+            side_y += inv_y;
+            (dist, Vector3::new(0, -step_y, 0))
+        } else {
+            bz += step_z;
+            let dist = side_z;
+            side_z += inv_z;
+            (dist, Vector3::new(0, 0, -step_z))
+        };
+
+        if travel > max_dist {
+            return None;
         }
 
-        curr += step;
-        dist_traveled += 0.1;
+        let block = world.get_block(bx, by, bz);
+        if block.is_solid() {
+            return Some(RaycastHit {
+                block_pos: Vector3::new(bx, by, bz),
+                face_normal,
+                block_type: block,
+            });
+        }
     }
-    None
 }
 
-fn determine_face(hit_pos: Vector3<f32>, bx: i32, by: i32, bz: i32) -> Vector3<i32> {
-    let dx = (hit_pos.x - (bx as f32 + 0.5)).abs();
-    let dy = (hit_pos.y - (by as f32 + 0.5)).abs();
-    let dz = (hit_pos.z - (bz as f32 + 0.5)).abs();
+fn initial_side_distance(origin: f32, block: i32, dir: f32, inv: f32) -> f32 {
+    if !inv.is_finite() {
+        return f32::INFINITY;
+    }
 
-    // Wybieramy oś, na której uderzenie jest najbliżej krawędzi bloku
-    if dx > dy && dx > dz {
-        if hit_pos.x > bx as f32 + 0.5 { Vector3::new(1, 0, 0) } else { Vector3::new(-1, 0, 0) }
-    } else if dy > dx && dy > dz {
-        if hit_pos.y > by as f32 + 0.5 { Vector3::new(0, 1, 0) } else { Vector3::new(0, -1, 0) }
+    if dir >= 0.0 {
+        ((block + 1) as f32 - origin) * inv
     } else {
-        if hit_pos.z > bz as f32 + 0.5 { Vector3::new(0, 0, 1) } else { Vector3::new(0, 0, -1) }
+        (origin - block as f32) * inv
     }
 }

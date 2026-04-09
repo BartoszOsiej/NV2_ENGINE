@@ -17,14 +17,13 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 }
 
 @group(0) @binding(0)
-var subtitle_tex: texture_2d<f32>;
+var text_tex: texture_2d<f32>;
 
 @group(0) @binding(1)
-var subtitle_sampler: sampler;
+var text_sampler: sampler;
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let s = textureSample(subtitle_tex, subtitle_sampler, input.uv);
-    // s.r is glyph coverage (we upload white color with alpha as coverage)
+    let s = textureSample(text_tex, text_sampler, input.uv);
     return vec4<f32>(s.rgb, s.a);
 }

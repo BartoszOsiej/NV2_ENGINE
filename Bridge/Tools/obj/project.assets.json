@@ -201,19 +201,5 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.204/PortableRuntimeIdentifierGraph.json"
       }
     }
-  },
-  "logs": [
-    {
-      "code": "NU1301",
-      "level": "Error",
-      "message": "The local source 'G:\\Nowy folder (3)\\NuGetPackages' doesn't exist.",
-      "libraryId": "System.Drawing.Common"
-    },
-    {
-      "code": "NU1301",
-      "level": "Error",
-      "message": "The local source 'G:\\Nowy folder (3)\\NuGetPackages' doesn't exist.",
-      "libraryId": "Microsoft.Win32.SystemEvents"
-    }
-  ]
+  }
 }
