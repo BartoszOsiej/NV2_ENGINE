@@ -8,8 +8,6 @@ use super::{
 
 const MENU_TITLE_MAIN: &str = "NVENGINE";
 const MENU_TITLE_PAUSE: &str = "PAUSED";
-const MENU_ITEMS_MAIN: [&str; 3] = ["NEW GAME", "LOAD/SAVE", "QUIT"];
-const MENU_ITEMS_PAUSE: [&str; 4] = ["RESUME", "SAVE", "SAVE + EXIT", "EXIT"];
 
 const WHITE: [u8; 4] = [255, 255, 255, 255];
 const SELECTED_TEXT: [u8; 4] = [22, 24, 28, 255];
@@ -34,8 +32,9 @@ impl MenuRenderer {
         queue: &wgpu::Queue,
         mode: UiMode,
         selected_index: Option<usize>,
+        low_end_enabled: bool,
     ) -> Result<()> {
-        let Some(menu) = MenuDefinition::for_mode(mode) else {
+        let Some(menu) = MenuDefinition::for_mode(mode, low_end_enabled) else {
             return Ok(());
         };
 
@@ -80,8 +79,9 @@ impl MenuRenderer {
         text_renderer: &TextRenderer,
         mode: UiMode,
         selected_index: Option<usize>,
+        low_end_enabled: bool,
     ) -> Vec<UiPanel> {
-        let Some(menu) = MenuDefinition::for_mode(mode) else {
+        let Some(menu) = MenuDefinition::for_mode(mode, low_end_enabled) else {
             return Vec::new();
         };
 
@@ -89,7 +89,7 @@ impl MenuRenderer {
         let selected = selected_index.unwrap_or(0).min(menu.items.len().saturating_sub(1));
         let mut max_width: f32 = 260.0;
         let mut item_height: f32 = 34.0;
-        for item in menu.items {
+        for item in &menu.items {
             if let Some((width, height)) = text_renderer.measure_text_size(item, 1.2) {
                 max_width = max_width.max(width);
                 item_height = item_height.max(height);
@@ -116,19 +116,31 @@ impl MenuRenderer {
 
 struct MenuDefinition {
     title: &'static str,
-    items: &'static [&'static str],
+    items: Vec<String>,
 }
 
 impl MenuDefinition {
-    fn for_mode(mode: UiMode) -> Option<Self> {
+    fn for_mode(mode: UiMode, low_end_enabled: bool) -> Option<Self> {
+        let low_end_label = if low_end_enabled { "LOW-END-PC: ON" } else { "LOW-END-PC: OFF" };
         match mode {
             UiMode::MainMenu => Some(Self {
                 title: MENU_TITLE_MAIN,
-                items: &MENU_ITEMS_MAIN,
+                items: vec![
+                    String::from("NEW GAME"),
+                    String::from("LOAD/SAVE"),
+                    String::from(low_end_label),
+                    String::from("QUIT"),
+                ],
             }),
             UiMode::PauseMenu => Some(Self {
                 title: MENU_TITLE_PAUSE,
-                items: &MENU_ITEMS_PAUSE,
+                items: vec![
+                    String::from("RESUME"),
+                    String::from("SAVE"),
+                    String::from(low_end_label),
+                    String::from("SAVE + EXIT"),
+                    String::from("EXIT"),
+                ],
             }),
             UiMode::None => None,
         }

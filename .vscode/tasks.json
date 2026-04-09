@@ -4,11 +4,22 @@
     {
       "label": "Run NV2 Engine with Vulkan Layer",
       "type": "shell",
-      "command": "${workspaceFolder}/Core/target/debug/nv2_engine.exe",
-      "options": {
-        "shell": {
-          "executable": "cmd.exe",
-          "args": ["/c"]
+      "command": "${workspaceFolder}/Core/target/debug/nv2_engine",
+      "windows": {
+        "command": "${workspaceFolder}\\Core\\target\\debug\\nv2_engine.exe",
+        "options": {
+          "shell": {
+            "executable": "cmd.exe",
+            "args": ["/c"]
+          }
+        }
+      },
+      "linux": {
+        "options": {
+          "shell": {
+            "executable": "/bin/bash",
+            "args": ["-c"]
+          }
         }
       },
       "problemMatcher": []

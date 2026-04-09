@@ -17,6 +17,7 @@ mod crafting;
 mod interaction;
 mod inventory;
 mod renderer;
+mod settings;
 mod world;
 mod input;
 mod assets;
@@ -28,8 +29,8 @@ enum AppMode {
     PauseMenu,
 }
 
-const MAIN_MENU_ITEMS: [&str; 3] = ["New Game", "Load/Save", "Quit"];
-const PAUSE_MENU_ITEMS: [&str; 4] = ["Resume", "Save", "Save + Exit", "Exit"];
+const MAIN_MENU_ITEMS: [&str; 4] = ["New Game", "Load/Save", "Low-End-PC", "Quit"];
+const PAUSE_MENU_ITEMS: [&str; 5] = ["Resume", "Save", "Low-End-PC", "Save + Exit", "Exit"];
 
 struct App {
     state:        Option<renderer::State>,
@@ -41,6 +42,7 @@ struct App {
     command_input: Option<String>,
     main_menu_selection: usize,
     pause_menu_selection: usize,
+    settings:     settings::SharedSettings,
     last_frame:   Instant,
 }
 
@@ -193,6 +195,33 @@ impl App {
         }
     }
 
+    fn low_end_mode_enabled(&self) -> bool {
+        self.settings.low_end_pc()
+    }
+
+    fn toggle_low_end_mode(&mut self) {
+        let enabled = !self.settings.low_end_pc();
+        self.settings.set_low_end_pc(enabled);
+        let profile = self.settings.profile();
+
+        if let Some(state) = self.state.as_mut() {
+            state.apply_performance_profile(profile);
+        }
+
+        let message = match self.settings.save() {
+            Ok(_) => format!(
+                "LOW-END-PC mode {}. Reduced view distance, foliage, chunk load, and water updates applied.",
+                if enabled { "enabled" } else { "disabled" }
+            ),
+            Err(err) => format!(
+                "LOW-END-PC mode {} but settings could not be saved: {}",
+                if enabled { "enabled" } else { "disabled" },
+                err
+            ),
+        };
+        self.show_console_message(message);
+    }
+
     fn new() -> Self {
         // Derive a well-distributed seed from wall-clock time.
         // Multiply+XOR folds both secs and nanos into all 32 output bits so
@@ -202,9 +231,10 @@ impl App {
             .wrapping_mul(1_664_525)
             .wrapping_add(now.subsec_nanos())
             .wrapping_mul(1_013_904_223);
+        let settings = settings::SharedSettings::new(settings::AppSettings::load());
         Self {
             state:          None,
-            world:          world::World::new(seed),
+            world:          world::World::new_with_settings(seed, settings.clone()),
             input:          input::InputState::default(),
             mode:           AppMode::MainMenu,
             save_path:      Self::default_save_path(),
@@ -212,6 +242,7 @@ impl App {
             command_input:  None,
             main_menu_selection: 0,
             pause_menu_selection: 0,
+            settings,
             last_frame:     Instant::now(),
         }
     }
@@ -224,7 +255,7 @@ impl App {
             .wrapping_mul(1_664_525)
             .wrapping_add(now.subsec_nanos())
             .wrapping_mul(1_013_904_223);
-        self.world = world::World::new(seed);
+        self.world = world::World::new_with_settings(seed, self.settings.clone());
         self.mode = AppMode::Playing;
         self.set_status_message("New game started. Press Esc for the pause menu.");
         self.update_window_title();
@@ -249,7 +280,7 @@ impl App {
     }
 
     fn load_game(&mut self) -> Result<(), String> {
-        match world::World::load_from_file(&self.save_path) {
+        match world::World::load_from_file_with_settings(&self.save_path, self.settings.clone()) {
             Ok(world) => {
                 self.reset_game_context();
                 self.world = world;
@@ -310,7 +341,7 @@ impl ApplicationHandler for App {
         // Robimy leak, żeby mieć &'static Window dla wgpu
         let window: &'static Window = Box::leak(Box::new(window));
 
-        let mut state = pollster::block_on(renderer::State::new(window));
+        let mut state = pollster::block_on(renderer::State::new(window, self.settings.profile()));
         if self.mode != AppMode::Playing {
             state.input_captured = false;
             state.window.set_cursor_visible(true);
@@ -416,6 +447,9 @@ impl ApplicationHandler for App {
                                             }
                                         }
                                         2 => {
+                                            self.toggle_low_end_mode();
+                                        }
+                                        3 => {
                                             event_loop.exit();
                                             return;
                                         }
@@ -501,11 +535,14 @@ impl ApplicationHandler for App {
                                             self.save_game();
                                         }
                                         2 => {
+                                            self.toggle_low_end_mode();
+                                        }
+                                        3 => {
                                             self.save_game();
                                             self.exit_to_main_menu(false);
                                             unlock_cursor = true;
                                         }
-                                        3 => {
+                                        4 => {
                                             self.exit_to_main_menu(false);
                                             unlock_cursor = true;
                                         }
@@ -573,6 +610,7 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
                 self.last_frame = now;
+                let low_end_enabled = self.low_end_mode_enabled();
 
                 if let Some(state) = self.state.as_mut() {
                     if self.mode == AppMode::Playing {
@@ -586,7 +624,9 @@ impl ApplicationHandler for App {
                         AppMode::Playing => (renderer::UiMode::None, None),
                     };
 
-                    if let Err(wgpu::SurfaceError::Lost) = state.render(&self.world, ui_mode, ui_selection) {
+                    if let Err(wgpu::SurfaceError::Lost) =
+                        state.render(&self.world, ui_mode, ui_selection, low_end_enabled)
+                    {
                         state.resize(state.size);
                     }
 

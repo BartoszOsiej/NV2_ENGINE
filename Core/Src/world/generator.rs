@@ -1,5 +1,6 @@
 use super::chunk::{Chunk, GeneratedChunk};
 use super::biomes::BiomeGenerator;
+use crate::settings::SharedSettings;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver};
 use rayon::prelude::*;
@@ -30,8 +31,12 @@ impl ChunkGenerator {
     const BATCH_SIZE: usize = 8;
 
     pub fn new_with_seed(seed: u32) -> (Self, Receiver<GeneratorMessage>) {
+        Self::new_with_seed_and_settings(seed, SharedSettings::default())
+    }
+
+    pub fn new_with_seed_and_settings(seed: u32, settings: SharedSettings) -> (Self, Receiver<GeneratorMessage>) {
         let (tx, rx) = mpsc::channel();
-        let gen      = Arc::new(BiomeGenerator::new(seed));
+        let gen      = Arc::new(BiomeGenerator::new_with_settings(seed, settings));
         (
             Self {
                 tx,

@@ -3,6 +3,10 @@ name    = "nv2_engine"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "nv2_engine"
+path = "Src/main.rs"
+
 [dependencies]
 wgpu       = "0.20"
 winit      = "0.30"

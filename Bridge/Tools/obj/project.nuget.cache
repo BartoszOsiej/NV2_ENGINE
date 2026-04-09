@@ -1,11 +1,15 @@
 {
   "version": 2,
-  "dgSpecHash": "E1P3b6TQ0OY=",
+  "dgSpecHash": "TU5jbd6ZISI=",
   "success": true,
-  "projectFilePath": "E:\\NV_ENGINE\\Bridge\\Tools\\NV2_Bridge.csproj",
+  "projectFilePath": "/home/kalibartek/Pobrane/NV_ENGINE/Bridge/Tools/NV2_Bridge.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\opiot\\.nuget\\packages\\microsoft.win32.systemevents\\8.0.0\\microsoft.win32.systemevents.8.0.0.nupkg.sha512",
-    "C:\\Users\\opiot\\.nuget\\packages\\system.drawing.common\\8.0.0\\system.drawing.common.8.0.0.nupkg.sha512"
+    "/home/kalibartek/.nuget/packages/microsoft.win32.systemevents/8.0.0/microsoft.win32.systemevents.8.0.0.nupkg.sha512",
+    "/home/kalibartek/.nuget/packages/system.drawing.common/8.0.0/system.drawing.common.8.0.0.nupkg.sha512",
+    "/home/kalibartek/.nuget/packages/microsoft.netcore.app.ref/8.0.25/microsoft.netcore.app.ref.8.0.25.nupkg.sha512",
+    "/home/kalibartek/.nuget/packages/microsoft.windowsdesktop.app.ref/8.0.25/microsoft.windowsdesktop.app.ref.8.0.25.nupkg.sha512",
+    "/home/kalibartek/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.25/microsoft.aspnetcore.app.ref.8.0.25.nupkg.sha512",
+    "/home/kalibartek/.nuget/packages/microsoft.netcore.app.host.linux-x64/8.0.25/microsoft.netcore.app.host.linux-x64.8.0.25.nupkg.sha512"
   ],
   "logs": []
 }

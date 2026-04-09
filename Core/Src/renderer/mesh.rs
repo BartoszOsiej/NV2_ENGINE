@@ -104,6 +104,7 @@ impl ChunkMesh {
 
         let mut mesh = Self::empty();
         let column_visuals = sample_chunk_visuals(world, cx, cz);
+        let hide_dense_foliage = world.low_end_mode_enabled();
         let ox = (cx * CHUNK_W as i32) as f32;
         let oz = (cz * CHUNK_D as i32) as f32;
 
@@ -112,6 +113,7 @@ impl ChunkMesh {
                 let column_visual = column_visuals[x * CHUNK_D + z];
                 for y in 0..CHUNK_H {
                     let block = *chunk.get(x, y, z);
+                    if hide_dense_foliage && block.hide_on_low_end() { continue; }
                     if !block.is_cube_meshed() { continue; }
 
                     let appearance = resolve_block_appearance(block);

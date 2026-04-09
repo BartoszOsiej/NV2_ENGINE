@@ -1,15 +1,13 @@
-﻿use wgpu::util::DeviceExt;
-use winit::{dpi::PhysicalSize, window::{CursorGrabMode, Window}};
 use std::collections::HashMap;
-// Tunable radii for loading/rendering
-const LOAD_RADIUS: i32 = 4;
-const RENDER_RADIUS: i32 = 4;
-const CLEANUP_RADIUS: i32 = 5;
+
+use wgpu::util::DeviceExt;
+use winit::{dpi::PhysicalSize, window::{CursorGrabMode, Window}};
 
 use crate::{
     assets,
     inventory::{HOTBAR_START, INVENTORY_SLOT_COUNT},
     interaction::{build_inventory_layout, GuiType, InteractionController, PanelRect, SlotRect, UiSlotId},
+    settings::PerformanceProfile,
     world::{biomes::SEA_LEVEL, BlockType, World},
 };
 
@@ -137,6 +135,8 @@ pub struct State {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub size: PhysicalSize<u32>,
+    performance_profile: PerformanceProfile,
+    present_modes: Vec<wgpu::PresentMode>,
 
     pub camera: Camera,
     pub camera_uniform: CameraUniform,
@@ -503,7 +503,7 @@ fn load_font(tr: &mut TextRenderer) {
 }
 
 impl State {
-    pub async fn new(window: &'static Window) -> Self {
+    pub async fn new(window: &'static Window, performance_profile: PerformanceProfile) -> Self {
         let size = window.inner_size();
 
         let backends = if cfg!(target_os = "windows") {
@@ -535,7 +535,10 @@ impl State {
             format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: Self::preferred_present_mode(
+                performance_profile,
+                &surface_caps.present_modes,
+            ),
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 0,
@@ -869,6 +872,8 @@ impl State {
             queue,
             config,
             size,
+            performance_profile,
+            present_modes: surface_caps.present_modes.clone(),
 
             camera,
             camera_uniform,
@@ -924,6 +929,65 @@ impl State {
             available_packs: Self::scan_texture_packs(),
             current_pack_index: 0,
         }
+    }
+
+    fn preferred_present_mode(
+        performance_profile: PerformanceProfile,
+        supported: &[wgpu::PresentMode],
+    ) -> wgpu::PresentMode {
+        let preferred = if performance_profile.prefer_vsync {
+            [
+                wgpu::PresentMode::Fifo,
+                wgpu::PresentMode::AutoVsync,
+                wgpu::PresentMode::FifoRelaxed,
+            ]
+        } else {
+            [
+                wgpu::PresentMode::Immediate,
+                wgpu::PresentMode::Mailbox,
+                wgpu::PresentMode::AutoNoVsync,
+            ]
+        };
+
+        preferred
+            .into_iter()
+            .find(|mode| supported.contains(mode))
+            .unwrap_or_else(|| supported.first().copied().unwrap_or(wgpu::PresentMode::Fifo))
+    }
+
+    fn invalidate_world_mesh_cache(&mut self) {
+        self.chunk_meshes.clear();
+        self.water_meshes.clear();
+        self.current_vertices.clear();
+        self.current_indices.clear();
+        self.vertex_buffer = None;
+        self.index_buffer = None;
+        self.water_vertex_buffer = None;
+        self.water_index_buffer = None;
+        self.num_water_indices = 0;
+        self.num_indices = 0;
+        self.prev_chunk = (i32::MIN, i32::MIN);
+        self.water_sim_dirty = false;
+        self.needs_gpu_upload = false;
+        self.mesh_rebuild_timer = 0.0;
+        self.water_mesh_rebuild_timer = 0.0;
+        self.needs_water_combine = false;
+        self.meshes_to_build.clear();
+    }
+
+    pub fn apply_performance_profile(&mut self, performance_profile: PerformanceProfile) {
+        if self.performance_profile == performance_profile {
+            return;
+        }
+
+        self.performance_profile = performance_profile;
+        self.config.present_mode =
+            Self::preferred_present_mode(performance_profile, &self.present_modes);
+        self.surface.configure(&self.device, &self.config);
+        self.depth_texture =
+            texture::Texture::create_depth_texture(&self.device, &self.config, "depth texture");
+        self.invalidate_world_mesh_cache();
+        self.window.request_redraw();
     }
 
     fn ui_clear_color(mode: UiMode, elapsed: f32) -> wgpu::Color {
@@ -1142,27 +1206,11 @@ impl State {
     }
 
     pub fn reset_for_new_world(&mut self) {
-        self.chunk_meshes.clear();
-        self.water_meshes.clear();
-        self.current_vertices.clear();
-        self.current_indices.clear();
-        self.vertex_buffer = None;
-        self.index_buffer = None;
-        self.water_vertex_buffer = None;
-        self.water_index_buffer = None;
-        self.num_water_indices = 0;
-        self.num_indices = 0;
-        self.prev_chunk = (i32::MIN, i32::MIN);
+        self.invalidate_world_mesh_cache();
         self.camera = Camera::new(cgmath::Vector3::new(0.0, 80.0, 0.0));
         self.camera_uniform = CameraUniform::new();
         self.camera_uniform.update_view_proj(&self.camera, self.config.width as f32 / self.config.height as f32);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
-        self.water_sim_dirty = false;
-        self.needs_gpu_upload = false;
-        self.mesh_rebuild_timer = 0.0;
-        self.water_mesh_rebuild_timer = 0.0;
-        self.needs_water_combine = false;
-        self.meshes_to_build.clear();
         self.subtitle_text = None;
         self.command_prompt_text = None;
         self.interaction = InteractionController::default();
@@ -1173,6 +1221,7 @@ impl State {
     pub fn update(&mut self, world: &mut World, input: &mut crate::input::InputState, dt: f32) {
         // Authoritative runtime movement path: event loop -> State::update -> Camera::tick_movement.
         let inventory_open = self.interaction.inventory_open();
+        let performance_profile = self.performance_profile;
 
         if !inventory_open {
             self.camera.tick_movement(world, input, dt);
@@ -1189,15 +1238,17 @@ impl State {
         self.elapsed_time += dt;
         let water_time  = self.elapsed_time * 0.55;
         let day_bright  = Self::day_brightness(self.elapsed_time);
-        let fog_density = visuals.fog_density.max(0.75);
+        let fog_density = (visuals.fog_density.max(0.75) * performance_profile.fog_density_multiplier)
+            .clamp(0.75, 2.25);
         // Keep distance ranges stable here; density is applied once in the shader to avoid horizon bands.
-        let fog_start = (RENDER_RADIUS as f32 * 10.0).clamp(28.0, 56.0);
-        let fog_end   = (RENDER_RADIUS as f32 * 22.0).clamp(fog_start + 24.0, 120.0);
+        let fog_start = (performance_profile.render_radius as f32 * 10.0).clamp(20.0, 56.0);
+        let fog_end =
+            (performance_profile.render_radius as f32 * 22.0).clamp(fog_start + 18.0, 120.0);
         let eye       = self.camera.position;
         let sun_phase = (self.elapsed_time / 1200.0).fract();
         let biome_uniform = BiomeUniform {
             ambient: visuals.ambient,
-            fog_color: [visuals.fog_color[0], visuals.fog_color[1], visuals.fog_color[2], visuals.fog_density],
+            fog_color: [visuals.fog_color[0], visuals.fog_color[1], visuals.fog_color[2], fog_density],
             grade: [visuals.grade[0], visuals.grade[1], visuals.grade[2], water_time],
             view_info: [day_bright, fog_start, fog_end, sun_phase],
             camera_pos: [eye.x, eye.y, eye.z, SEA_LEVEL as f32],
@@ -1208,7 +1259,7 @@ impl State {
         // The new simulate_step() scales well with the increased MAX_CHANGES_PER_STEP.
         // Mesh rebuild is separately throttled to 1.5 s (see below).
         self.water_sim_timer += dt;
-        if self.water_sim_timer >= 0.3 {
+        if self.water_sim_timer >= performance_profile.water_sim_interval {
             self.water_sim_timer = 0.0;
             world.simulate_water();
             self.water_sim_dirty = true;
@@ -1221,8 +1272,8 @@ impl State {
         let cx = (self.camera.position.x / 16.0).floor() as i32;
         let cz = (self.camera.position.z / 16.0).floor() as i32;
 
-        world.load_around(cx, cz, LOAD_RADIUS);
-        world.unload_far_chunks(cx, cz, LOAD_RADIUS);
+        world.load_around(cx, cz, performance_profile.load_radius);
+        world.unload_far_chunks(cx, cz, performance_profile.load_radius);
 
         if inventory_open {
             self.interaction
@@ -1302,8 +1353,8 @@ impl State {
         // Without this pass the spawn chunk can exist in the world but never be
         // queued for meshing, which makes the sky/fog show through at spawn.
         let mut missing_loaded = Vec::new();
-        for dz in -RENDER_RADIUS..=RENDER_RADIUS {
-            for dx in -RENDER_RADIUS..=RENDER_RADIUS {
+        for dz in -performance_profile.render_radius..=performance_profile.render_radius {
+            for dx in -performance_profile.render_radius..=performance_profile.render_radius {
                 let key = (cx + dx, cz + dz);
                 if world.get_chunk(key.0, key.1).is_none() {
                     continue;
@@ -1325,7 +1376,7 @@ impl State {
         // mountain geometry (each chunk build can take 5-15 ms).  Spreading more
         // work across frames is preferable to hitching every initial-load frame.
         let mut built_this_frame = 0u32;
-        while built_this_frame < 2 {
+        while built_this_frame < performance_profile.mesh_build_budget {
             let key = match self.meshes_to_build.pop_front() {
                 Some(k) => k,
                 None => break,
@@ -1347,13 +1398,16 @@ impl State {
         if chunk_moved {
             self.prev_chunk = (cx, cz);
             self.chunk_meshes.retain(|&(mx, mz), _| {
-                (mx - cx).abs() <= CLEANUP_RADIUS && (mz - cz).abs() <= CLEANUP_RADIUS
+                (mx - cx).abs() <= performance_profile.cleanup_radius
+                    && (mz - cz).abs() <= performance_profile.cleanup_radius
             });
             self.water_meshes.retain(|&(mx, mz), _| {
-                (mx - cx).abs() <= CLEANUP_RADIUS && (mz - cz).abs() <= CLEANUP_RADIUS
+                (mx - cx).abs() <= performance_profile.cleanup_radius
+                    && (mz - cz).abs() <= performance_profile.cleanup_radius
             });
             self.meshes_to_build.retain(|&(mx, mz)| {
-                (mx - cx).abs() <= CLEANUP_RADIUS && (mz - cz).abs() <= CLEANUP_RADIUS
+                (mx - cx).abs() <= performance_profile.cleanup_radius
+                    && (mz - cz).abs() <= performance_profile.cleanup_radius
             });
             self.needs_gpu_upload = true;
             self.mesh_rebuild_timer = 1.0; // bypasses the 0.1-s cooldown below
@@ -1368,7 +1422,13 @@ impl State {
             self.mesh_rebuild_timer = 0.0;
             self.needs_gpu_upload = false;
 
-            let (verts, idxs)    = combine_meshes(&self.chunk_meshes, cx, cz, RENDER_RADIUS, &self.camera_uniform.view_proj);
+            let (verts, idxs) = combine_meshes(
+                &self.chunk_meshes,
+                cx,
+                cz,
+                performance_profile.render_radius,
+                &self.camera_uniform.view_proj,
+            );
             self.num_indices      = idxs.len() as u32;
             let (vb, ib)          = upload_pair(&self.device, &verts, &idxs);
             self.vertex_buffer    = vb;
@@ -1380,12 +1440,14 @@ impl State {
         // Triggered by the liquid simulation tick. Geometry is rebuilt from the
         // current world state, then signals a buffer-combine below.
         self.water_mesh_rebuild_timer += dt;
-        if self.water_sim_dirty && self.water_mesh_rebuild_timer >= 1.5 {
+        if self.water_sim_dirty
+            && self.water_mesh_rebuild_timer >= performance_profile.water_rebuild_interval
+        {
             self.water_mesh_rebuild_timer = 0.0;
             self.water_sim_dirty = false;
             self.water_meshes.clear();
-            for dz in -RENDER_RADIUS..=RENDER_RADIUS {
-                for dx in -RENDER_RADIUS..=RENDER_RADIUS {
+            for dz in -performance_profile.render_radius..=performance_profile.render_radius {
+                for dx in -performance_profile.render_radius..=performance_profile.render_radius {
                     let key = (cx + dx, cz + dz);
                     if world.get_chunk(key.0, key.1).is_some() {
                         let wm = mesh::ChunkMesh::build_water(world, key.0, key.1);
@@ -1400,7 +1462,13 @@ impl State {
         // Runs after any incremental addition, eviction, or full rebuild above.
         if self.needs_water_combine {
             self.needs_water_combine = false;
-            let (wverts, widxs)       = combine_meshes(&self.water_meshes, cx, cz, RENDER_RADIUS, &self.camera_uniform.view_proj);
+            let (wverts, widxs) = combine_meshes(
+                &self.water_meshes,
+                cx,
+                cz,
+                performance_profile.render_radius,
+                &self.camera_uniform.view_proj,
+            );
             self.num_water_indices    = widxs.len() as u32;
             let (wvb, wib)            = upload_pair(&self.device, &wverts, &widxs);
             self.water_vertex_buffer  = wvb;
@@ -1429,7 +1497,13 @@ impl State {
         self.window.request_redraw();
     }
 
-    pub fn render(&mut self, world: &World, mode: UiMode, selection: Option<usize>) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        world: &World,
+        mode: UiMode,
+        selection: Option<usize>,
+        low_end_enabled: bool,
+    ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let clear_color = Self::ui_clear_color(mode, self.elapsed_time);
@@ -1450,7 +1524,7 @@ impl State {
             UiMode::MainMenu | UiMode::PauseMenu => {
                 for panel in self
                     .menu_renderer
-                    .build_menu_panels(&self.text_renderer, mode, selection)
+                    .build_menu_panels(&self.text_renderer, mode, selection, low_end_enabled)
                 {
                     push_ui_panel(&mut panel_vertices, &mut panel_indices, screen_size, panel);
                 }
@@ -1949,7 +2023,14 @@ impl State {
                 }
             }
             UiMode::MainMenu | UiMode::PauseMenu => {
-                let _ = self.menu_renderer.render_menu(&mut self.text_renderer, &self.device, &self.queue, mode, selection);
+                let _ = self.menu_renderer.render_menu(
+                    &mut self.text_renderer,
+                    &self.device,
+                    &self.queue,
+                    mode,
+                    selection,
+                    low_end_enabled,
+                );
             }
         }
 
