@@ -113,7 +113,7 @@ impl TerrainAI {
         exps.iter().map(|&x| x / sum).collect()
     }
 
-    /// Forward pass: terrain features -> vegetation decision
+    /// Forward pass: terrain features -> vegetation decision (OPTIMIZED)
     /// 
     /// Input features (8):
     /// - terrain_height (normalized)
@@ -129,11 +129,23 @@ impl TerrainAI {
         
         // Hidden layer: input @ w1.T + b1, then ReLU
         let hidden_raw = input.dot(&self.w1.view()) + &self.b1;
-        let hidden: Array1<f32> = hidden_raw.map(|&x| Self::relu(x));
+        let hidden: Array1<f32> = hidden_raw.map(|&x| x.max(0.0)); // Simple ReLU
         
-        // Output layer: hidden @ w2.T + b2, then Softmax
+        // Output layer: hidden @ w2.T + b2
         let output_logits = hidden.dot(&self.w2.view()) + &self.b2;
-        let probs = Self::softmax(output_logits.as_slice().unwrap());
+        
+        // Softmax
+        let max_logit = output_logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let exp_logits: Vec<f32> = output_logits.iter()
+            .map(|&x| ((x - max_logit) * 0.5).exp()) // Scale down for stability
+            .collect();
+        let sum: f32 = exp_logits.iter().sum();
+        
+        let probs: Vec<f32> = if sum > 0.0 {
+            exp_logits.iter().map(|x| x / sum).collect()
+        } else {
+            vec![0.25, 0.25, 0.25, 0.25]
+        };
         
         [probs[0], probs[1], probs[2], probs[3]]
     }
@@ -226,16 +238,21 @@ impl AISystem {
         loop {
             epoch += 1;
             let mut total_loss = 0.0;
-            let samples = 100;
+            let samples = 500; // 5x więcej samples
 
             // Generate synthetic training data
-            for _ in 0..samples {
+            for i in 0..samples {
                 let features = Self::generate_training_sample();
                 let target = Self::target_vegetation(&features);
 
                 if let Ok(mut ai_lock) = ai.lock() {
                     let loss = ai_lock.backward(&features, target);
                     total_loss += loss;
+                    
+                    // DEBUG: Print every 50 samples
+                    if i % 50 == 0 && epoch <= 3 {
+                        println!("[AI-TRAIN] Epoch {}, Sample {}: loss={:.4}", epoch, i, loss);
+                    }
                 }
             }
 
@@ -244,15 +261,12 @@ impl AISystem {
                 epoch,
                 loss: avg_loss,
             });
-
-            // Small delay to prevent 100% CPU
-            thread::sleep(std::time::Duration::from_millis(10));
-
-            // Adaptive learning rate decay
-            if epoch % 1000 == 0 {
-                if let Ok(mut ai_lock) = ai.lock() {
-                    ai_lock.learning_rate *= 0.95;
-                }
+            
+            println!("[AI-EPOCH] {} completed | Avg Loss: {:.4}", epoch, avg_loss);
+            
+            // Cool down per 5 epochs
+            if epoch % 5 == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
     }
@@ -274,41 +288,45 @@ impl AISystem {
         ]
     }
 
-    /// Determine target vegetation based on features
+    /// Determine target vegetation based on features (HEURISTIC)
     fn target_vegetation(features: &[f32; 8]) -> [f32; 4] {
         let height = features[0];
         let humidity = features[3];
         let light = features[6];
-
-        // Simple heuristic: decide vegetation type
-        // 0: flower, 1: fern, 2: stick, 3: pebble
-        let mut probs = [0.0, 0.0, 0.0, 0.0];
-
-        // Wet, shaded areas: ferns
-        if humidity > 0.6 && light < 0.5 {
-            probs[1] = 0.8;
+        
+        // Heuristic rules for fast learning
+        let mut probs = [0.0f32; 4];
+        
+        // Output 0: Flowers - high humidity + good light
+        if humidity > 0.5f32 && light > 0.5f32 {
+            probs[0] = (humidity * 0.7f32 + light * 0.3f32).min(1.0f32);
         }
-        // High humidity: flowers
-        else if humidity > 0.5 {
-            probs[0] = 0.6;
+        
+        // Output 1: Ferns - VERY high humidity + low light (shady)
+        if humidity > 0.7f32 && light < 0.4f32 {
+            probs[1] = (humidity * 0.8f32).min(1.0f32);
         }
-        // Low areas: pebbles
-        else if height < 0.3 {
-            probs[3] = 0.7;
+        
+        // Output 2: Sticks - DEFAULT most places
+        else if probs[0] < 0.3f32 && probs[1] < 0.3f32 {
+            probs[2] = 0.6f32;
         }
-        // Default: sticks
-        else {
-            probs[2] = 0.5;
+        
+        // Output 3: Pebbles - low height (valleys)
+        if height < 0.2f32 {
+            probs[3] = 0.7f32;
         }
-
-        // Normalize probabilities
+        
+        // Normalize to probability distribution
         let sum: f32 = probs.iter().sum();
-        if sum > 0.0 {
+        if sum > 0.0f32 {
             for p in probs.iter_mut() {
                 *p /= sum;
             }
+        } else {
+            probs[2] = 1.0f32; // Default to sticks
         }
-
+        
         probs
     }
 

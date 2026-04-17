@@ -419,14 +419,68 @@ impl BiomeGenerator {
             let mut writer = WorldGenWriter::new(cx, cz, blocks);
             self.vegetation.populate_chunk(self, cx, cz, &mut writer);
             writes.extend(writer.finish());
+            
+            // ✅ AI VEGETATION (HEURISTIC) ✅
+            self.populate_ai_vegetation(cx, cz, blocks);
         }
     }
 
     pub fn populate_world_trees_for_chunk(&self, world: &mut crate::world::World, cx: i32, cz: i32) {
+        println!("[BIO-TREES-CALL] Chunk ({}, {}), low_end={}", cx, cz, self.settings.low_end_pc());
         if self.settings.low_end_pc() {
+            println!("[BIO-TREES-SKIP] Low end mode - skipping");
             return;
         }
         self.vegetation.populate_world_trees_for_chunk(world, self, cx, cz);
+    }
+    
+    /// AI vegetation using heuristics (no neural network, thread-safe)
+    fn populate_ai_vegetation(
+        &self,
+        cx: i32,
+        cz: i32,
+        blocks: &mut Box<[[[BlockType; CHUNK_D]; CHUNK_H]; CHUNK_W]>,
+    ) {
+        let world_seed = self.seed() as i64;
+        let mut placed = 0;
+        
+        // 4x4 grid per chunk
+        for gy in 0..4 {
+            for gx in 0..4 {
+                let wx = cx * CHUNK_W as i32 + gx * 4;
+                let wz = cz * CHUNK_D as i32 + gy * 4;
+                
+                let sample = self.sample_column(wx, wz);
+                if sample.water_top > sample.surface { continue; }
+                
+                // Find surface Y
+                let surface_y = sample.surface;
+                let wy = surface_y + 1;
+                
+                if wy >= CHUNK_H { continue; }
+                
+                // Heuristic: High humidity -> Fern, otherwise -> Stick
+                let block_type = if sample.humidity > 0.65 {
+                    BlockType::Fern
+                } else {
+                    BlockType::Stick
+                };
+                
+                // Place in chunk
+                let lx = (wx & 15) as usize;
+                let lz = (wz & 15) as usize;
+                let ly = wy as usize;
+                
+                if ly < CHUNK_H && (cx * CHUNK_W as i32 + lx as i32) == wx && (cz * CHUNK_D as i32 + lz as i32) == wz {
+                    blocks[lx][ly][lz] = block_type;
+                    placed += 1;
+                }
+            }
+        }
+        
+        if placed > 0 {
+            println!("[AI-HEUR] Chunk ({}, {}): {} vegetation", cx, cz, placed);
+        }
     }
 
     fn sample_climate(&self, wx: i32, wz: i32) -> ClimateSample {
