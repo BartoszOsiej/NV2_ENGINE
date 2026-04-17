@@ -195,7 +195,6 @@ impl TerrainAI {
 pub struct AISystem {
     ai: Arc<Mutex<TerrainAI>>,
     tx: Sender<AIMessage>,
-    rx: Arc<Mutex<Receiver<AIMessage>>>,
     training_thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -204,7 +203,6 @@ impl AISystem {
     pub fn new() -> (Self, Receiver<AIMessage>) {
         let ai = Arc::new(Mutex::new(TerrainAI::new()));
         let (tx, rx) = mpsc::channel();
-        let rx_shared = Arc::new(Mutex::new(rx));
 
         let ai_clone = Arc::clone(&ai);
         let tx_clone = tx.clone();
@@ -216,13 +214,10 @@ impl AISystem {
         let system = Self {
             ai,
             tx,
-            rx: rx_shared,
             training_thread: Some(training_thread),
         };
 
-        let (_, rx_main) = mpsc::channel();
-
-        (system, rx_main)
+        (system, rx)
     }
 
     /// Background training loop: continuously improves model
