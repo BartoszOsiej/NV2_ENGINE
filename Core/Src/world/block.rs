@@ -619,6 +619,27 @@ impl BlockType {
         self.is_opaque() || self.is_foliage()
     }
 
+    pub fn is_sprite_like(self) -> bool {
+        matches!(
+            self,
+            BlockType::Stick
+                | BlockType::Bush
+                | BlockType::TallGrass
+                | BlockType::Flower
+                | BlockType::Fern
+                | BlockType::FernPlant
+                | BlockType::DeadBush
+                | BlockType::Rose
+                | BlockType::DandelionFlower
+                | BlockType::TulipRed
+                | BlockType::TulipPink
+                | BlockType::TulipWhite
+                | BlockType::TulipOrange
+                | BlockType::Cornflower
+                | BlockType::Allium
+        )
+    }
+
     pub fn hardness(self) -> u32 {
         match self {
             BlockType::Air | BlockType::Water => 0,

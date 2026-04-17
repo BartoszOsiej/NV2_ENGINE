@@ -114,6 +114,25 @@ impl ChunkMesh {
                 for y in 0..CHUNK_H {
                     let block = *chunk.get(x, y, z);
                     if hide_dense_foliage && block.hide_on_low_end() { continue; }
+                    
+                    // ✅ SPRITE-LIKE BLOCKS (Stick, Bush, Flower, Fern) ✅
+                    if block.is_sprite_like() {
+                        let appearance = resolve_block_appearance(block);
+                        let wx = cx * CHUNK_W as i32 + x as i32;
+                        let wy = y as i32;
+                        let wz = cz * CHUNK_D as i32 + z as i32;
+                        let biome_tint = column_visual.biome_tint;
+                        
+                        // Render as 2 crossed quads (like flowers in Minecraft)
+                        mesh.push_sprite(
+                            ox + x as f32, y as f32, oz + z as f32,
+                            appearance.face_uvs[0],
+                            0.6,
+                            biome_tint,
+                        );
+                        continue;
+                    }
+                    
                     if !block.is_cube_meshed() { continue; }
 
                     let appearance = resolve_block_appearance(block);
@@ -306,6 +325,67 @@ impl ChunkMesh {
         }
 
         self.indices.extend_from_slice(&[base, base+1, base+2, base, base+2, base+3]);
+    }
+
+    /// Render sprite-like block (flower, stick, bush) as 2 crossed quads
+    fn push_sprite(
+        &mut self,
+        x: f32,
+        y: f32,
+        z: f32,
+        uv: TileUV,
+        size: f32,
+        tint: [f32; 3],
+    ) {
+        let uvs = uv.uvs();
+        let base = self.vertices.len() as u32;
+        let half = size * 0.5;
+        let brightness = 0.8; // Sprites get consistent brightness
+        
+        // Quad 1: North-South (X-axis rotation)
+        let positions_1 = [
+            [x - half, y, z],
+            [x + half, y, z],
+            [x + half, y + size, z],
+            [x - half, y + size, z],
+        ];
+        
+        for (pos, uv) in positions_1.iter().zip(uvs.iter()) {
+            self.vertices.push(Vertex {
+                position: *pos,
+                tex_coords: *uv,
+                normal: [1.0, 0.0, 0.0],
+                brightness,
+                is_top: 0.0,
+                biome_tint: tint,
+                surface_data: [0.0, 0.0, 0.0, 0.0],
+                foliage_tint: 1.0,
+            });
+        }
+        self.indices.extend_from_slice(&[base, base+1, base+2, base, base+2, base+3]);
+        
+        // Quad 2: East-West (Z-axis rotation) 
+        let positions_2 = [
+            [x, y, z - half],
+            [x, y, z + half],
+            [x, y + size, z + half],
+            [x, y + size, z - half],
+        ];
+        
+        let base2 = self.vertices.len() as u32;
+        for (pos, uv) in positions_2.iter().zip(uvs.iter()) {
+            self.vertices.push(Vertex {
+                position: *pos,
+                tex_coords: *uv,
+                normal: [0.0, 0.0, 1.0],
+                brightness,
+                is_top: 0.0,
+                biome_tint: tint,
+                surface_data: [0.0, 0.0, 0.0, 0.0],
+                foliage_tint: 1.0,
+            });
+        }
+        self.indices.extend_from_slice(&[base2, base2+1, base2+2, base2, base2+2, base2+3]);
     }
 }
 
