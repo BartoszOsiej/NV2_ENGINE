@@ -10,6 +10,8 @@ const TREE_CELL_SIZE: i32 = 6;
 const GRASS_CELL_SIZE: i32 = 2;
 const FLOWER_CELL_SIZE: i32 = 4;
 const SHRUB_CELL_SIZE: i32 = 3;
+// ── AI-driven vegetation ──────────────────────────────────────────────────
+const AI_VEGETATION_CELL_SIZE: i32 = 3;
 
 const DARK_OAK_LAYERS: &[(i32, i32)] = &[(-2, 2), (-1, 3), (0, 4), (1, 3), (2, 2)];
 const SWAMP_LAYERS: &[(i32, i32)] = &[(-1, 2), (0, 3), (1, 3), (2, 2)];
@@ -126,6 +128,8 @@ impl VegetationGenerator {
         cz: i32,
     ) {
         self.place_trees(world, generator, cx, cz);
+        // ── AI-driven vegetation generation ──────────────────────────────
+        self.place_ai_vegetation(world, generator, cx, cz);
     }
 
     fn place_trees(&self, world: &mut World, generator: &BiomeGenerator, cx: i32, cz: i32) {
@@ -238,7 +242,7 @@ impl VegetationGenerator {
 
         for_each_chunk_cell(cx, cz, SHRUB_CELL_SIZE, world_seed, 4_003, |wx, wz| {
             let sample = generator.sample_column(wx, wz);
-            if sample.water_top != sample.surface || !supports_shrub_surface(sample.surface_block) {
+            if sample.water_top != sample.surface || !supports_grass_surface(sample.surface_block) {
                 return;
             }
             if noise2_01(world_seed.wrapping_add(4_031), wx, wz, 0.31) > sample.definition.shrub_density {
@@ -249,27 +253,105 @@ impl VegetationGenerator {
                 return;
             };
 
-            match sample.biome {
-                BiomeId::Desert => {
-                    if noise2_01(world_seed.wrapping_add(4_101), wx, wz, 0.73) > 0.72 {
-                        let height = choose_range(world_seed.wrapping_add(4_131), 2, 4, wx, wz, 0.51);
-                        for offset in 1..=height {
-                            writer.set_block(wx, surface_y + offset, wz, BlockType::Cactus, BlockWriteRule::GroundCover);
-                        }
-                    } else {
-                        writer.set_block(wx, surface_y + 1, wz, BlockType::DeadBush, BlockWriteRule::GroundCover);
+            let wy = surface_y + 1;
+            let rule = BlockWriteRule::GroundCover;
+            if rule.allows(BlockType::Cactus) {
+                writer.set_block(wx, wy, wz, BlockType::Cactus, rule);
+            }
+        });
+    }
+
+    /// AI-driven vegetation placement using neural network predictions
+    fn place_ai_vegetation(&self, world: &mut World, generator: &BiomeGenerator, cx: i32, cz: i32) {
+        let world_seed = generator.seed() as i64;
+
+        for_each_chunk_cell(cx, cz, AI_VEGETATION_CELL_SIZE, world_seed, 4_001, |wx, wz| {
+            let sample = generator.sample_column(wx, wz);
+            
+            // Skip if on water or not suitable surface
+            if sample.water_top != sample.surface || !supports_grass_surface(sample.surface_block) {
+                return;
+            }
+
+            let Some(surface_y) = surface_y_at(generator, wx, wz) else {
+                return;
+            };
+
+            // Extract features for AI model
+            let height_normalized = (surface_y as f32 / CHUNK_H as f32).min(1.0);
+            let slope = slope_at(generator, wx, wz) as f32 / 10.0;
+            let temperature = sample.temperature as f32;
+            let humidity = sample.humidity as f32;
+            
+            // Estimate nearby water
+            let mut water_dist = 1.0f32;
+            for dx in -3..=3 {
+                for dz in -3..=3 {
+                    let neighbor = generator.sample_column(wx + dx, wz + dz);
+                    if neighbor.water_top > neighbor.surface {
+                        water_dist = (((dx * dx + dz * dz) as f32).sqrt() / 5.0f32).min(1.0f32);
+                        break;
                     }
                 }
-                BiomeId::Swamp => {
-                    let block = if noise2_01(world_seed.wrapping_add(4_171), wx, wz, 0.67) > 0.55 {
-                        BlockType::RootLattice
-                    } else {
-                        BlockType::Bush
-                    };
-                    writer.set_block(wx, surface_y + 1, wz, block, BlockWriteRule::GroundCover);
+            }
+            
+            // Count nearby vegetation
+            let mut veg_count = 0.0f32;
+            for dx in -2..=2 {
+                for dz in -2..=2 {
+                    let neighbor = generator.sample_column(wx + dx, wz + dz);
+                    if supports_grass_surface(neighbor.surface_block) && neighbor.water_top == neighbor.surface {
+                        veg_count += 0.1f32;
+                    }
                 }
-                _ => {
-                    writer.set_block(wx, surface_y + 1, wz, BlockType::Bush, BlockWriteRule::GroundCover);
+            }
+            veg_count = (veg_count / 2.5f32).min(1.0f32);
+            
+            // Light level (approximated from height/biome)
+            let light_level = (0.5f32 + temperature * 0.5f32).min(1.0f32);
+            
+            // Noise-based seed for variety
+            let noise_seed = noise2_01(world_seed.wrapping_add(4_031), wx, wz, 0.47) as f32;
+            
+            // AI features vector
+            let features = [
+                height_normalized,
+                slope,
+                temperature,
+                humidity,
+                water_dist,
+                veg_count,
+                light_level,
+                noise_seed,
+            ];
+            
+            // Get AI prediction
+            let (block_type, confidence) = world.ai_system.predict_vegetation(&features);
+            
+            // Only place if confidence is high enough
+            if confidence > 0.5 && block_type != BlockType::Air {
+                // Randomly decide whether to place based on biome density
+                let placement_chance = match sample.biome {
+                    BiomeId::Forest | BiomeId::DarkForest => 0.7,
+                    BiomeId::Swamp => 0.5,
+                    BiomeId::Taiga => 0.6,
+                    BiomeId::Plains => 0.4,
+                    _ => 0.3,
+                };
+                
+                if noise2_01(world_seed.wrapping_add(4_099), wx, wz, 0.29) < placement_chance {
+                    let wy = surface_y + 1;
+                    if let Some(chunk) = world.chunks.get_mut(&(
+                        (wx >> 4) as i32,
+                        (wz >> 4) as i32,
+                    )) {
+                        let lx = (wx & 15) as usize;
+                        let lz = (wz & 15) as usize;
+                        let ly = wy as usize;
+                        if ly < CHUNK_H {
+                            chunk.set(lx, ly, lz, block_type);
+                        }
+                    }
                 }
             }
         });

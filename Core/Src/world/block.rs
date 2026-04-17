@@ -76,6 +76,29 @@ pub const BLOCK_REGISTRY: &[(u8, &str, &str)] = &[
     (72, "fence",             "oak_planks"),
     (73, "fence_gate",        "oak_planks"),
     (74, "workbench_upgrade", "stone_bricks"),
+    // ── Extended Vegetation ──────────────────────────────────────────────
+    (75, "rose",              "poppy"),
+    (76, "dandelion_flower",  "dandelion"),
+    (77, "tulip_red",         "red_tulip"),
+    (78, "tulip_pink",        "pink_tulip"),
+    (79, "tulip_white",       "white_tulip"),
+    (80, "tulip_orange",      "orange_tulip"),
+    (81, "cornflower",        "cornflower"),
+    (82, "allium",            "allium"),
+    (83, "azalea_flower",     "azalea_flower"),
+    (84, "lily_pad",          "lily_pad"),
+    (85, "fern",              "large_fern"),
+    (86, "fern_plant",        "fern"),
+    (87, "seagrass",          "seagrass"),
+    (88, "tall_seagrass",     "tall_seagrass"),
+    (89, "kelp",              "kelp"),
+    (90, "stick_small",       "stick"),
+    (91, "pebble_1",          "gravel"),
+    (92, "pebble_2",          "gravel"),
+    (93, "pebble_3",          "gravel"),
+    (94, "cobble_moss",       "mossy_cobblestone"),
+    (95, "vine",              "vine"),
+    (96, "moss_carpet",       "moss_carpet"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -156,6 +179,29 @@ pub enum BlockType {
     Fence = 72,
     FenceGate = 73,
     WorkbenchUpgrade = 74,
+    // ── Extended Vegetation ──────────────────────────────────────────────
+    Rose = 75,
+    DandelionFlower = 76,
+    TulipRed = 77,
+    TulipPink = 78,
+    TulipWhite = 79,
+    TulipOrange = 80,
+    Cornflower = 81,
+    Allium = 82,
+    AzaleaFlower = 83,
+    LilyPad = 84,
+    Fern = 85,
+    FernPlant = 86,
+    Seagrass = 87,
+    TallSeagrass = 88,
+    Kelp = 89,
+    StickSmall = 90,
+    Pebble1 = 91,
+    Pebble2 = 92,
+    Pebble3 = 93,
+    CobbleMoss = 94,
+    Vine = 95,
+    MossCarpet = 96,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -228,6 +274,13 @@ impl BlockType {
                 | BlockType::PaleCanopy
                 | BlockType::BloomCanopy
                 | BlockType::DarkCanopy
+                // ── New foliage types ────────────────────────────────────
+                | BlockType::Fern
+                | BlockType::FernPlant
+                | BlockType::Seagrass
+                | BlockType::TallSeagrass
+                | BlockType::Vine
+                | BlockType::MossCarpet
         ) || {
             let name = self.name();
             name.contains("canopy") || name.ends_with("leaves")
@@ -349,6 +402,29 @@ impl BlockType {
             BlockType::Fence            => "Oak Fence",
             BlockType::FenceGate        => "Oak Fence Gate",
             BlockType::WorkbenchUpgrade => "Workbench Upgrade",
+            // ── Extended Vegetation ──────────────────────────────────────────────
+            BlockType::Rose              => "Rose",
+            BlockType::DandelionFlower  => "Dandelion",
+            BlockType::TulipRed         => "Red Tulip",
+            BlockType::TulipPink        => "Pink Tulip",
+            BlockType::TulipWhite       => "White Tulip",
+            BlockType::TulipOrange      => "Orange Tulip",
+            BlockType::Cornflower        => "Cornflower",
+            BlockType::Allium            => "Allium",
+            BlockType::AzaleaFlower     => "Azalea Flower",
+            BlockType::LilyPad          => "Lily Pad",
+            BlockType::Fern              => "Fern",
+            BlockType::FernPlant        => "Fern Plant",
+            BlockType::Seagrass          => "Seagrass",
+            BlockType::TallSeagrass     => "Tall Seagrass",
+            BlockType::Kelp              => "Kelp",
+            BlockType::StickSmall       => "Small Stick",
+            BlockType::Pebble1          => "Pebble",
+            BlockType::Pebble2          => "Pebble",
+            BlockType::Pebble3          => "Pebble",
+            BlockType::CobbleMoss       => "Mossy Cobblestone",
+            BlockType::Vine              => "Vine",
+            BlockType::MossCarpet       => "Moss Carpet",
         }
     }
 
@@ -443,6 +519,28 @@ impl BlockType {
             72 => Some(BlockType::Fence),
             73 => Some(BlockType::FenceGate),
             74 => Some(BlockType::WorkbenchUpgrade),
+            75 => Some(BlockType::Rose),
+            76 => Some(BlockType::DandelionFlower),
+            77 => Some(BlockType::TulipRed),
+            78 => Some(BlockType::TulipPink),
+            79 => Some(BlockType::TulipWhite),
+            80 => Some(BlockType::TulipOrange),
+            81 => Some(BlockType::Cornflower),
+            82 => Some(BlockType::Allium),
+            83 => Some(BlockType::AzaleaFlower),
+            84 => Some(BlockType::LilyPad),
+            85 => Some(BlockType::Fern),
+            86 => Some(BlockType::FernPlant),
+            87 => Some(BlockType::Seagrass),
+            88 => Some(BlockType::TallSeagrass),
+            89 => Some(BlockType::Kelp),
+            90 => Some(BlockType::StickSmall),
+            91 => Some(BlockType::Pebble1),
+            92 => Some(BlockType::Pebble2),
+            93 => Some(BlockType::Pebble3),
+            94 => Some(BlockType::CobbleMoss),
+            95 => Some(BlockType::Vine),
+            96 => Some(BlockType::MossCarpet),
             _ => None,
         }
     }
@@ -531,7 +629,29 @@ impl BlockType {
             | BlockType::Flower
             | BlockType::DeadBush
             | BlockType::Sapling
-            | BlockType::Stick => 1,
+            | BlockType::Stick
+            // ── New vegetation ──────────────────────────────
+            | BlockType::Rose
+            | BlockType::DandelionFlower
+            | BlockType::TulipRed
+            | BlockType::TulipPink
+            | BlockType::TulipWhite
+            | BlockType::TulipOrange
+            | BlockType::Cornflower
+            | BlockType::Allium
+            | BlockType::AzaleaFlower
+            | BlockType::LilyPad
+            | BlockType::Fern
+            | BlockType::FernPlant
+            | BlockType::Seagrass
+            | BlockType::TallSeagrass
+            | BlockType::Kelp
+            | BlockType::StickSmall
+            | BlockType::Pebble1
+            | BlockType::Pebble2
+            | BlockType::Pebble3
+            | BlockType::MossCarpet
+            | BlockType::Vine => 1,
             BlockType::TreeLeaves
             | BlockType::NeedleCanopy
             | BlockType::WarmCanopy
@@ -562,7 +682,8 @@ impl BlockType {
             | BlockType::Chest
             | BlockType::Torch
             | BlockType::WorkbenchUpgrade
-            | BlockType::Flint => 1,
+            | BlockType::Flint
+            | BlockType::CobbleMoss => 1,
             BlockType::TreeTrunk
             | BlockType::NeedleWood
             | BlockType::WarmWood
@@ -983,6 +1104,29 @@ impl BlockType {
             BlockType::Fence => [tile_oak_planks(); 6],
             BlockType::FenceGate => [tile_oak_planks(); 6],
             BlockType::WorkbenchUpgrade => [tile_stone_bricks(); 6],
+            // ── Extended Vegetation ──────────────────────────────────────────────
+            BlockType::Rose              => [tile_bush(); 6],
+            BlockType::DandelionFlower  => [tile_bush(); 6],
+            BlockType::TulipRed         => [tile_bush(); 6],
+            BlockType::TulipPink        => [tile_bush(); 6],
+            BlockType::TulipWhite       => [tile_bush(); 6],
+            BlockType::TulipOrange      => [tile_bush(); 6],
+            BlockType::Cornflower        => [tile_bush(); 6],
+            BlockType::Allium            => [tile_bush(); 6],
+            BlockType::AzaleaFlower     => [tile_bush(); 6],
+            BlockType::LilyPad          => [tile_bush(); 6],
+            BlockType::Fern              => [tile_bush(); 6],
+            BlockType::FernPlant        => [tile_bush(); 6],
+            BlockType::Seagrass          => [tile_bush(); 6],
+            BlockType::TallSeagrass     => [tile_bush(); 6],
+            BlockType::Kelp              => [tile_bush(); 6],
+            BlockType::StickSmall       => [tile_tree_trunk_side(); 6],
+            BlockType::Pebble1          => [tile_gravel(); 6],
+            BlockType::Pebble2          => [tile_gravel(); 6],
+            BlockType::Pebble3          => [tile_gravel(); 6],
+            BlockType::CobbleMoss       => [tile_cobblestone(); 6],
+            BlockType::Vine              => [tile_tree_leaves(); 6],
+            BlockType::MossCarpet       => [tile_moss_block(); 6],
         }
     }
 }

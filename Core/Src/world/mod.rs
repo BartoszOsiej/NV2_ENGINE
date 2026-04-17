@@ -7,6 +7,7 @@ pub mod palette;
 pub mod liquid;
 pub mod vegetation;
 pub mod worldgen;
+pub mod ai_generator;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -22,6 +23,7 @@ use biomes::{Biome, BiomeGenerator};
 use biomes::SEA_LEVEL;
 use generator::{ChunkGenerator, GeneratorMessage};
 use worldgen::WorldBlockWrite;
+use ai_generator::AISystem;
 use crate::{crafting::NVCrafterState, inventory::ItemStack, settings::SharedSettings};
 pub use block::BlockType;
 pub use raycast::RaycastHit;
@@ -43,6 +45,9 @@ pub struct World {
     nvcrafter_states: HashMap<(i32, i32, i32), NVCrafterState>,
     dropped_items: Vec<WorldItemDrop>,
     settings: SharedSettings,
+    // ── AI System ────────────────────────────────────────────────────────
+    pub ai_system: AISystem,
+    ai_receiver: mpsc::Receiver<ai_generator::AIMessage>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -76,6 +81,7 @@ impl World {
     pub fn new_with_settings(seed: u32, settings: SharedSettings) -> Self {
         let (chunk_gen, gen_receiver) = ChunkGenerator::new_with_seed_and_settings(seed, settings.clone());
         let generator = Arc::clone(chunk_gen.generator());
+        let (ai_system, ai_receiver) = AISystem::new();
         Self {
             chunks: HashMap::new(),
             generator,
@@ -87,6 +93,8 @@ impl World {
             nvcrafter_states: HashMap::new(),
             dropped_items: Vec::new(),
             settings,
+            ai_system,
+            ai_receiver,
         }
     }
 

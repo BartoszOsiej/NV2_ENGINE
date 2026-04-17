@@ -3,7 +3,7 @@ use super::biomes::BiomeGenerator;
 use super::worldgen::WorldBlockWrite;
 
 pub const CHUNK_W: usize = 16;
-pub const CHUNK_H: usize = 256;
+pub const CHUNK_H: usize = 512;  // Zwiększone z 256 na 512 - podwojona wysokość
 pub const CHUNK_D: usize = 16;
 
 pub struct GeneratedChunk {
