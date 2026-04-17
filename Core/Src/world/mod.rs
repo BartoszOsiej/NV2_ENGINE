@@ -8,6 +8,9 @@ pub mod liquid;
 pub mod vegetation;
 pub mod worldgen;
 pub mod ai_generator;
+pub mod decorations;
+pub mod decoration_ai;
+pub mod online_trainer;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -24,6 +27,7 @@ use biomes::SEA_LEVEL;
 use generator::{ChunkGenerator, GeneratorMessage};
 use worldgen::WorldBlockWrite;
 use ai_generator::AISystem;
+use decorations::DecorationManager;
 use crate::{crafting::NVCrafterState, inventory::ItemStack, settings::SharedSettings};
 pub use block::BlockType;
 pub use raycast::RaycastHit;
@@ -48,6 +52,8 @@ pub struct World {
     // ── AI System ────────────────────────────────────────────────────────
     pub ai_system: AISystem,
     ai_receiver: mpsc::Receiver<ai_generator::AIMessage>,
+    // ── Decoration System (Phase 2) ──────────────────────────────────────
+    pub decorations: DecorationManager,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -95,6 +101,7 @@ impl World {
             settings,
             ai_system,
             ai_receiver,
+            decorations: DecorationManager::new(),
         }
     }
 
