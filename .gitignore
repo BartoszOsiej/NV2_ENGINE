@@ -2,6 +2,9 @@
 /Core/target/
 target/
 
+# AI model checkpoints (runtime-generated, recreated on first run)
+/Core/checkpoints/
+
 # OS files
 .DS_Store
 Thumbs.db
