@@ -11,8 +11,8 @@
 
 ## 1. Whole-project tests
 
-**Result: ✅ 96 passed · 0 failed · 1 ignored** (the ignored one is the
-release-only benchmark) — total 97 tests, ~15 s.
+**Result: ✅ 98 passed · 0 failed · 1 ignored** (the ignored one is the
+release-only benchmark) — total 99 tests, ~16 s.
 
 > Phase-2 features added during the 2026-08-13 sweep: community model
 > sharing (export/import), JSON training-dataset import, player-preference
@@ -22,7 +22,7 @@ release-only benchmark) — total 97 tests, ~15 s.
 
 | Module | Tests | Status |
 |---|---|---|
-| `world::ai_generator` (AI system, model bundles, datasets, preferences, checkpoints, textures) | 16 | ✅ |
+| `world::ai_generator` (AI system, model bundles, datasets, preferences, checkpoints, textures) | 18 | ✅ |
 | `world::memplp` (**MeMLP** core — MLP train/forward, NaN hardening, migration, JSON roundtrip) | 10 | ✅ |
 | `world::block` (block registry) | 7 | ✅ |
 | `world::vegetation` (AI vegetation placement, canopies, tree pass) | 3 | ✅ |
@@ -42,7 +42,7 @@ release-only benchmark) — total 97 tests, ~15 s.
 
 | Category | Modules | Tests | Status |
 |---|---|---|---|
-| **AI / ML** | ai_generator, memplp, online_trainer, vegetation, biomes | 32 | ✅ |
+| **AI / ML** | ai_generator, memplp, online_trainer, vegetation, biomes | 34 | ✅ |
 | **World & terrain** | block, world | 13 | ✅ |
 | **Gameplay** | interaction, crafting, inventory | 38 | ✅ |
 | **Renderer** | camera, mesh, texture_registry | 6 | ✅ |

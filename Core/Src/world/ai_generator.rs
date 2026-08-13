@@ -1677,6 +1677,42 @@ mod tests {
     }
 
     #[test]
+    fn import_rejects_newer_bundle_versions() {
+        let (system, _rx) = AISystem::new_clean();
+        let path = std::env::temp_dir().join("nv2_future_bundle.json");
+        let bundle = serde_json::json!({
+            "format": MODEL_BUNDLE_FORMAT,
+            "format_version": MODEL_BUNDLE_VERSION + 1,
+            "exported_at": "now",
+            "author": "future",
+            "description": "",
+            "biome_hint": "",
+            "checkpoint": serde_json::to_value(TerrainAI::new()).unwrap(),
+        });
+        std::fs::write(&path, bundle.to_string()).unwrap();
+        let err = system
+            .import_model(path.to_str().unwrap())
+            .expect_err("newer format must be rejected");
+        assert!(err.contains("newer"), "got: {err}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn blend_distribution_normalises_and_clamps_weight() {
+        let base = [1.0, 0.0, 0.0, 0.0];
+        let prefs = [0.0, 1.0, 0.0, 0.0];
+        // weight > 1 is clamped to 1 — result equals the preference side.
+        let out = blend_distribution(base, prefs, 2.0);
+        assert_eq!(out, [0.0, 1.0, 0.0, 0.0]);
+        // weight 0 keeps the base untouched (still renormalised).
+        let out = blend_distribution(base, prefs, 0.0);
+        assert_eq!(out, [1.0, 0.0, 0.0, 0.0]);
+        // Middle ground is a proper distribution.
+        let out = blend_distribution(base, prefs, 0.5);
+        assert_eq!(out, [0.5, 0.5, 0.0, 0.0]);
+    }
+
+    #[test]
     fn model_bundle_export_matches_live_model() {
         let (system, _rx) = AISystem::new_clean();
         let path = std::env::temp_dir().join("nv2_bundle_eq_test.json");
