@@ -1,5 +1,31 @@
 # 📝 Change Log - AI System Implementation
 
+## NV2.0 — Phase 2 Features (2026-08-13)
+
+Three roadmap items from `AI_PHASE2_ROADMAP.md` implemented and tested:
+
+1. **Community model sharing** — portable `ModelBundle` format
+   (`nv2-model-bundle` v1) wrapping a checkpoint with author/description/
+   biome-hint metadata. `AISystem::export_model` / `import_model`;
+   in-game `/ai_export <path> [author]` and `/ai_import <path>`.
+   Imports are NaN-sanitised and persisted to the runtime checkpoint.
+2. **Training-dataset import** — JSON datasets (`samples` + `targets`)
+   validated and trained on directly. `AISystem::train_on_dataset`;
+   in-game `/ai_dataset <path> [epochs]`. Empty/mismatched files are
+   rejected, non-finite rows skipped.
+3. **Player-preference learning** — `TerrainAI` tracks per-class preference
+   counters (flower/fern/stick/pebble) in the checkpoint (backward
+   compatible via `#[serde(default)]`). Placing vegetation increments its
+   counter; the background loop blends heuristic targets with the learned
+   distribution (30%), so the model leans toward the player's taste.
+   `/ai_stats` shows the live counters.
+
+New commands: `/ai_export`, `/ai_import`, `/ai_dataset`, `/ai_stats`.
+Suite is now **96 passed / 0 failed** (97 total incl. ignored release
+benchmark). 9 new tests, clippy delta: 0.
+
+---
+
 ## NV2.0 — NaN Hardening (2026-08-13)
 
 A real bug found by the Docs QA sweep: background training could explode

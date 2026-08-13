@@ -54,7 +54,14 @@ pub fn execute(world: &mut World, player_origin: (f32, f32, f32), raw: &str) -> 
     match parts[0] {
         "locate" => execute_locate(world, player_origin, &parts),
         "tp" => execute_tp(world, &parts),
-        other => Err(format!("Unknown command '/{}'. Supported commands: /locate, /tp.", other)),
+        "ai_export" => execute_ai_export(world, &parts),
+        "ai_import" => execute_ai_import(world, &parts),
+        "ai_dataset" => execute_ai_dataset(world, &parts),
+        "ai_stats" => execute_ai_stats(world),
+        other => Err(format!(
+            "Unknown command '/{}'. Supported commands: /locate, /tp, /ai_export, /ai_import, /ai_dataset, /ai_stats.",
+            other
+        )),
     }
 }
 
@@ -150,6 +157,73 @@ fn execute_tp(world: &mut World, parts: &[&str]) -> Result<CommandOutput, String
         ),
         teleport_target: Some(teleport_target),
     })
+}
+
+fn execute_ai_export(world: &mut World, parts: &[&str]) -> Result<CommandOutput, String> {
+    if parts.len() < 2 {
+        return Err(String::from("Usage: /ai_export <path> [author]"));
+    }
+    let path = parts[1];
+    let author = parts.get(2).copied().unwrap_or("player");
+    let summary = world.ai_system.export_model(path, author, "exported in-game", "")?;
+    Ok(CommandOutput {
+        message: format!(
+            "Model exported to '{}' ({} params, v{}, {} training samples).",
+            path, summary.parameters, summary.version, summary.training_samples
+        ),
+        teleport_target: None,
+    })
+}
+
+fn execute_ai_import(world: &mut World, parts: &[&str]) -> Result<CommandOutput, String> {
+    if parts.len() < 2 {
+        return Err(String::from("Usage: /ai_import <path>"));
+    }
+    let path = parts[1];
+    let summary = world.ai_system.import_model(path)?;
+    Ok(CommandOutput {
+        message: format!(
+            "Imported model by '{}' ({} params, v{}, {} samples, biome hint '{}').",
+            summary.author,
+            summary.parameters,
+            summary.version,
+            summary.training_samples,
+            summary.biome_hint
+        ),
+        teleport_target: None,
+    })
+}
+
+fn execute_ai_dataset(world: &mut World, parts: &[&str]) -> Result<CommandOutput, String> {
+    if parts.len() < 2 {
+        return Err(String::from("Usage: /ai_dataset <path> [epochs]"));
+    }
+    let path = parts[1];
+    let epochs = parts.get(2).map(|e| parse_usize(e, "epochs")).transpose()?.unwrap_or(1);
+    let summary = world.ai_system.train_on_dataset(path, epochs)?;
+    Ok(CommandOutput {
+        message: format!(
+            "Dataset '{}': trained on {} samples × {} epochs ({} updates), final loss {:.4}.",
+            summary.name, summary.samples, summary.epochs, summary.trained, summary.final_loss
+        ),
+        teleport_target: None,
+    })
+}
+
+fn execute_ai_stats(world: &mut World) -> Result<CommandOutput, String> {
+    let (params, version, samples, prefs) = world.ai_system.full_stats();
+    Ok(CommandOutput {
+        message: format!(
+            "AI: {} params, MeMLP v{}, {} training samples | preferences flower={} fern={} stick={} pebble={}.",
+            params, version, samples, prefs[0], prefs[1], prefs[2], prefs[3]
+        ),
+        teleport_target: None,
+    })
+}
+
+fn parse_usize(text: &str, name: &str) -> Result<usize, String> {
+    text.parse::<usize>()
+        .map_err(|_| format!("Invalid {} '{}'. Expected a positive integer.", name, text))
 }
 
 fn parse_i32(text: &str, axis: &str) -> Result<i32, String> {
@@ -343,6 +417,41 @@ mod tests {
         let mut world = World::new(1337);
         let error = execute(&mut world, (0.0, 80.0, 0.0), "/tp 100 80").unwrap_err();
         assert!(error.contains("Usage: /tp"));
+    }
+
+    #[test]
+    fn ai_stats_command_reports_live_model() {
+        let mut world = World::new(1337);
+        let out = execute(&mut world, (0.0, 80.0, 0.0), "/ai_stats").unwrap();
+        assert!(out.message.contains("AI:"), "got: {}", out.message);
+        assert!(out.message.contains("params"), "got: {}", out.message);
+    }
+
+    #[test]
+    fn ai_export_import_commands_roundtrip() {
+        let mut world = World::new(1337);
+        let path = std::env::temp_dir().join("nv2_cmd_bundle.json");
+        let path_str = path.to_str().unwrap();
+
+        let exported = execute(&mut world, (0.0, 80.0, 0.0), &format!("/ai_export {path_str} tester"))
+            .unwrap();
+        assert!(exported.message.contains("Model exported"), "got: {}", exported.message);
+
+        let imported = execute(&mut world, (0.0, 80.0, 0.0), &format!("/ai_import {path_str}"))
+            .unwrap();
+        assert!(imported.message.contains("Imported model by 'tester'"), "got: {}", imported.message);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn ai_commands_validate_usage() {
+        let mut world = World::new(1337);
+        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_export").unwrap_err().contains("Usage:"));
+        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_import").unwrap_err().contains("Usage:"));
+        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_dataset").unwrap_err().contains("Usage:"));
+        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_dataset x.json abc")
+            .unwrap_err()
+            .contains("epochs"));
     }
 
     #[test]

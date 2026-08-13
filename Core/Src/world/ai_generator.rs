@@ -56,6 +56,13 @@ pub struct TerrainAI {
     // Training parameters
     learning_rate: f32,
     training_samples: usize,
+
+    /// Per-class preference counters (0=flower, 1=fern, 2=stick, 3=pebble)
+    /// learned from what the player actively places. Kept in the checkpoint
+    /// so preferences survive restarts; `#[serde(default)]` keeps old
+    /// checkpoints compatible.
+    #[serde(default)]
+    player_preferences: [u32; 4],
 }
 
 /// The pre-MeMLP checkpoint layout (kept for `Deserialize` migration).
@@ -118,6 +125,8 @@ impl<'de> Deserialize<'de> for TerrainAI {
                 learning_rate: f32,
                 #[serde(default)]
                 training_samples: usize,
+                #[serde(default)]
+                player_preferences: [u32; 4],
             }
             let n: NewFormat =
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?;
@@ -126,6 +135,7 @@ impl<'de> Deserialize<'de> for TerrainAI {
                 rng_state: n.rng_state,
                 learning_rate: n.learning_rate,
                 training_samples: n.training_samples,
+                player_preferences: n.player_preferences,
             });
         }
 
@@ -137,6 +147,7 @@ impl<'de> Deserialize<'de> for TerrainAI {
             rng_state: legacy.rng_state,
             learning_rate: legacy.learning_rate,
             training_samples: legacy.training_samples,
+            player_preferences: [0; 4],
         })
     }
 }
@@ -149,6 +160,7 @@ impl TerrainAI {
             rng_state: 42u64,
             learning_rate: 0.01,
             training_samples: 0,
+            player_preferences: [0; 4],
         }
     }
 
@@ -165,6 +177,58 @@ impl TerrainAI {
     /// Number of training samples seen so far.
     pub fn training_samples(&self) -> usize {
         self.training_samples
+    }
+
+    /* ------------------------------------------------------------ */
+    /* Player preference learning                                    */
+    /* ------------------------------------------------------------ */
+
+    /// Increment the preference counter for one vegetation class.
+    pub fn record_preference(&mut self, class: usize) {
+        if class < 4 {
+            self.player_preferences[class] = self.player_preferences[class].saturating_add(1);
+        }
+    }
+
+    /// Raw per-class preference counters (0=flower, 1=fern, 2=stick, 3=pebble).
+    pub fn player_preferences(&self) -> [u32; 4] {
+        self.player_preferences
+    }
+
+    /// Normalised preference distribution (uniform when nothing recorded).
+    pub fn preference_distribution(&self) -> [f32; 4] {
+        let total: u32 = self.player_preferences.iter().sum();
+        if total == 0 {
+            return [0.25; 4];
+        }
+        let total = total as f32;
+        [
+            self.player_preferences[0] as f32 / total,
+            self.player_preferences[1] as f32 / total,
+            self.player_preferences[2] as f32 / total,
+            self.player_preferences[3] as f32 / total,
+        ]
+    }
+
+    /// Blend a heuristic target with the player's learned preferences.
+    ///
+    /// `weight` (0..=1) controls how strongly the model leans toward what
+    /// the player likes. The result is renormalised to a distribution.
+    pub fn blended_target(&self, base: [f32; 4], weight: f32) -> [f32; 4] {
+        let prefs = self.preference_distribution();
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            out[i] = base[i] * (1.0 - weight) + prefs[i] * weight;
+        }
+        let sum: f32 = out.iter().sum();
+        if sum > 0.0 {
+            for v in out.iter_mut() {
+                *v /= sum;
+            }
+        } else {
+            out = [0.25; 4];
+        }
+        out
     }
 
     /* ------------------------------------------------------------ */
@@ -690,6 +754,119 @@ fn generate_tile(palette: TexturePalette, pattern: TexturePattern, seed: u64) ->
 /// dataset batches.
 pub type TrainingSample = ([f32; 8], [f32; 4]);
 
+/// Portable community model bundle — the format for sharing a trained model
+/// between players/servers. Wraps a full checkpoint with authorship metadata.
+///
+/// ```json
+/// {
+///   "format": "nv2-model-bundle",
+///   "format_version": 1,
+///   "exported_at": "2026-08-13T12:00:00Z",
+///   "author": "Buffy",
+///   "description": "Dense-forest decoration model",
+///   "biome_hint": "dark_forest",
+///   "checkpoint": { ...TerrainAI JSON... }
+/// }
+/// ```
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ModelBundle {
+    pub format: String,
+    pub format_version: u32,
+    pub exported_at: String,
+    pub author: String,
+    pub description: String,
+    pub biome_hint: String,
+    pub checkpoint: TerrainAI,
+}
+
+/// Human-readable summary of an exported/imported model.
+#[derive(Debug, Clone)]
+pub struct ModelSummary {
+    pub author: String,
+    pub description: String,
+    pub biome_hint: String,
+    pub parameters: usize,
+    pub version: u32,
+    pub training_samples: usize,
+    pub preferences: [u32; 4],
+}
+
+/// A JSON training dataset file — `samples` (8 terrain features) and
+/// `targets` (4-class vegetation distributions).
+///
+/// ```json
+/// {
+///   "name": "forest-floor",
+///   "version": "1.0",
+///   "samples": [[0.45, 0.23, 0.68, 0.72, 0.15, 0.55, 0.82, 0.34], ...],
+///   "targets": [[0.0, 0.8, 0.15, 0.05], ...]
+/// }
+/// ```
+#[derive(Deserialize)]
+pub struct TrainingDataset {
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub samples: Vec<[f32; 8]>,
+    pub targets: Vec<[f32; 4]>,
+}
+
+/// Summary of a dataset-training run.
+#[derive(Debug, Clone)]
+pub struct TrainSummary {
+    pub name: String,
+    pub samples: usize,
+    pub epochs: usize,
+    pub trained: usize,
+    pub final_loss: f32,
+    pub parameters: usize,
+}
+
+/// Stable identifier for the community bundle format.
+pub const MODEL_BUNDLE_FORMAT: &str = "nv2-model-bundle";
+pub const MODEL_BUNDLE_VERSION: u32 = 1;
+
+/// Current UTC time as an ISO-8601 string (best effort; falls back to 0).
+fn now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // days → YYYY-MM-DD (no chrono dependency; leap-year aware enough for
+    // a metadata timestamp).
+    let days = secs / 86_400;
+    let (mut year, mut remaining) = (1970u64, days);
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        year += 1;
+    }
+    let month_days = [31, if is_leap_year(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut month = 0u64;
+    let mut day = remaining;
+    for (i, &md) in month_days.iter().enumerate() {
+        if day < md {
+            month = i as u64 + 1;
+            break;
+        }
+        day -= md;
+    }
+    let hour = (secs % 86_400) / 3_600;
+    let minute = (secs % 3_600) / 60;
+    let second = secs % 60;
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year, month, day + 1, hour, minute, second
+    )
+}
+
+#[allow(clippy::manual_is_multiple_of)] // %-form is clearer for the Gregorian rule
+fn is_leap_year(year: u64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
 /// Which of the 4 AI output classes a block maps to (if any).
 /// 0 = flower, 1 = fern, 2 = stick, 3 = pebble.
 pub fn vegetation_class(block: BlockType) -> Option<usize> {
@@ -731,6 +908,27 @@ pub fn one_hot(class: usize) -> [f32; 4] {
         target[class] = 1.0;
     }
     target
+}
+
+/// Blend a base distribution with a preference distribution.
+///
+/// `weight` (0..=1) controls how strongly preferences pull the target;
+/// the result is renormalised to a valid distribution.
+pub fn blend_distribution(base: [f32; 4], prefs: [f32; 4], weight: f32) -> [f32; 4] {
+    let w = weight.clamp(0.0, 1.0);
+    let mut out = [0.0f32; 4];
+    for i in 0..4 {
+        out[i] = base[i] * (1.0 - w) + prefs[i] * w;
+    }
+    let sum: f32 = out.iter().sum();
+    if sum > 0.0 {
+        for v in out.iter_mut() {
+            *v /= sum;
+        }
+        out
+    } else {
+        [0.25; 4]
+    }
 }
 
 /// AI system that runs in background thread
@@ -810,6 +1008,14 @@ impl AISystem {
             }
             buf.push((features, target));
         }
+        // Preference learning: a one-hot target means the player actively
+        // chose that class (place). Breaks use a distributed target, so they
+        // never inflate the preference counters.
+        if let Some(i) = target.iter().position(|&t| t >= 0.999) {
+            if let Ok(mut model) = self.ai.lock() {
+                model.record_preference(i);
+            }
+        }
     }
 
     /// Number of queued player-feedback samples.
@@ -858,6 +1064,172 @@ impl AISystem {
             model.model_version(),
             model.training_samples(),
         )
+    }
+
+    /// Live model stats + learned player preferences.
+    pub fn full_stats(&self) -> (usize, u32, usize, [u32; 4]) {
+        let model = self.ai.lock().unwrap();
+        (
+            model.model_param_count(),
+            model.model_version(),
+            model.training_samples(),
+            model.player_preferences(),
+        )
+    }
+
+    /* ------------------------------------------------------------ */
+    /* Community model sharing (export / import)                     */
+    /* ------------------------------------------------------------ */
+
+    /// Export the live model as a portable community bundle.
+    ///
+    /// The file wraps the checkpoint with authorship metadata so players can
+    /// share learned terrain styles. Returns a summary of what was written.
+    pub fn export_model(
+        &self,
+        path: &str,
+        author: &str,
+        description: &str,
+        biome_hint: &str,
+    ) -> Result<ModelSummary, String> {
+        let model = self
+            .ai
+            .lock()
+            .map_err(|_| "AI model lock poisoned".to_string())?;
+        let summary = ModelSummary {
+            author: author.to_string(),
+            description: description.to_string(),
+            biome_hint: biome_hint.to_string(),
+            parameters: model.model_param_count(),
+            version: model.model_version(),
+            training_samples: model.training_samples(),
+            preferences: model.player_preferences(),
+        };
+        let bundle = ModelBundle {
+            format: MODEL_BUNDLE_FORMAT.to_string(),
+            format_version: MODEL_BUNDLE_VERSION,
+            exported_at: now_iso8601(),
+            author: author.to_string(),
+            description: description.to_string(),
+            biome_hint: biome_hint.to_string(),
+            checkpoint: model.clone(),
+        };
+        drop(model);
+
+        let json = serde_json::to_string_pretty(&bundle)
+            .map_err(|e| format!("failed to serialise model bundle: {e}"))?;
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("cannot create export dir: {e}"))?;
+            }
+        }
+        std::fs::write(path, json).map_err(|e| format!("cannot write {path}: {e}"))?;
+        Ok(summary)
+    }
+
+    /// Import a community model bundle and swap it into the live model.
+    ///
+    /// The imported checkpoint is sanitised (NaN/Inf → 0.0) and persisted to
+    /// the runtime checkpoint file so it survives restarts.
+    pub fn import_model(&self, path: &str) -> Result<ModelSummary, String> {
+        let data = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {path}: {e}"))?;
+        let bundle: ModelBundle = serde_json::from_str(&data)
+            .map_err(|e| format!("invalid model bundle: {e}"))?;
+        if bundle.format != MODEL_BUNDLE_FORMAT {
+            return Err(format!(
+                "not an NV2 model bundle (format '{}')",
+                bundle.format
+            ));
+        }
+        if bundle.format_version > MODEL_BUNDLE_VERSION {
+            return Err(format!(
+                "bundle format v{} is newer than supported v{}",
+                bundle.format_version, MODEL_BUNDLE_VERSION
+            ));
+        }
+
+        let summary = ModelSummary {
+            author: bundle.author.clone(),
+            description: bundle.description.clone(),
+            biome_hint: bundle.biome_hint.clone(),
+            parameters: bundle.checkpoint.model_param_count(),
+            version: bundle.checkpoint.model_version(),
+            training_samples: bundle.checkpoint.training_samples(),
+            preferences: bundle.checkpoint.player_preferences(),
+        };
+
+        let mut imported = bundle.checkpoint;
+        imported.model.sanitize();
+        {
+            let mut model = self
+                .ai
+                .lock()
+                .map_err(|_| "AI model lock poisoned".to_string())?;
+            *model = imported;
+        }
+        // Persist so the import survives restarts.
+        let _ = self.save_checkpoint_now();
+        Ok(summary)
+    }
+
+    /* ------------------------------------------------------------ */
+    /* Training datasets                                             */
+    /* ------------------------------------------------------------ */
+
+    /// Train the vegetation head on a JSON dataset file.
+    ///
+    /// Validates the file (lengths, finiteness, distribution targets),
+    /// runs `epochs` full passes, and reports the average loss.
+    pub fn train_on_dataset(&self, path: &str, epochs: usize) -> Result<TrainSummary, String> {
+        let data = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {path}: {e}"))?;
+        let ds: TrainingDataset = serde_json::from_str(&data)
+            .map_err(|e| format!("invalid dataset: {e}"))?;
+        if ds.samples.is_empty() {
+            return Err("dataset has no samples".to_string());
+        }
+        if ds.samples.len() != ds.targets.len() {
+            return Err(format!(
+                "sample/target count mismatch ({} vs {})",
+                ds.samples.len(),
+                ds.targets.len()
+            ));
+        }
+        let epochs = epochs.max(1);
+        let name = ds.name.clone().unwrap_or_else(|| path.to_string());
+
+        let mut total = 0.0f32;
+        let mut trained = 0usize;
+        for _ in 0..epochs {
+            for (features, target) in ds.samples.iter().zip(ds.targets.iter()) {
+                // Skip poisoned rows; the model's own train() also guards.
+                if !features.iter().chain(target.iter()).all(|v| v.is_finite()) {
+                    continue;
+                }
+                let mut model = self
+                    .ai
+                    .lock()
+                    .map_err(|_| "AI model lock poisoned".to_string())?;
+                total += model.backward(features, *target);
+                trained += 1;
+            }
+        }
+        let final_loss = if trained > 0 {
+            total / trained as f32
+        } else {
+            f32::INFINITY
+        };
+        let parameters = self.model_stats().0;
+        Ok(TrainSummary {
+            name,
+            samples: ds.samples.len(),
+            epochs,
+            trained,
+            final_loss,
+            parameters,
+        })
     }
 
     /// Background training loop: continuously improves model
@@ -913,10 +1285,18 @@ impl AISystem {
                 last_dataset_load = std::time::Instant::now();
             }
 
-            // 3) Synthetic samples to keep the vegetation head sharp.
+            // 3) Synthetic samples to keep the vegetation head sharp. The
+            //    heuristic target is blended with the player's learned
+            //    preferences (30% weight), so the whole model leans toward
+            //    what the player likes — not just the feedback samples.
+            let prefs = ai
+                .lock()
+                .map(|m| m.preference_distribution())
+                .unwrap_or([0.25; 4]);
             for i in 0..200 {
                 let features = Self::generate_training_sample();
-                let target = Self::target_vegetation(&features);
+                let base = Self::target_vegetation(&features);
+                let target = blend_distribution(base, prefs, 0.30);
                 if let Ok(mut model) = ai.lock() {
                     total_loss += model.backward(&features, target);
                     trained += 1;
@@ -1177,6 +1557,140 @@ mod tests {
         );
         assert_eq!(loaded.model_version(), memplp::MEMLP_VERSION);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn model_bundle_export_import_roundtrip() {
+        let (system, _rx) = AISystem::new_clean();
+        let path = std::env::temp_dir().join("nv2_model_bundle_test.json");
+        let path = path.to_str().unwrap();
+
+        let exported = system
+            .export_model(path, "Buffy", "Dense-forest decorations", "dark_forest")
+            .expect("export model");
+        assert_eq!(exported.author, "Buffy");
+        assert!(exported.parameters > 0);
+
+        let imported = system.import_model(path).expect("import model");
+        assert_eq!(imported.author, "Buffy");
+        assert_eq!(imported.biome_hint, "dark_forest");
+        assert_eq!(imported.parameters, exported.parameters);
+        assert_eq!(imported.version, exported.version);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn import_rejects_non_bundle_files() {
+        let (system, _rx) = AISystem::new_clean();
+        let path = std::env::temp_dir().join("nv2_not_a_bundle.json");
+        std::fs::write(&path, "{\"hello\": \"world\"}").unwrap();
+        let err = system
+            .import_model(path.to_str().unwrap())
+            .expect_err("garbage must be rejected");
+        assert!(err.contains("bundle") || err.contains("invalid"), "got: {err}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn train_on_dataset_imports_and_reduces_loss() {
+        let (system, _rx) = AISystem::new_clean();
+        let path = std::env::temp_dir().join("nv2_dataset_test.json");
+        // A tiny learnable pattern: humidity>0.6 → flowers.
+        let mut samples = Vec::new();
+        let mut targets = Vec::new();
+        for i in 0..40 {
+            let h = i as f32 / 40.0;
+            let mut features = [0.5f32; 8];
+            features[3] = h; // humidity
+            samples.push(features);
+            if h > 0.6 {
+                targets.push([1.0, 0.0, 0.0, 0.0]);
+            } else {
+                targets.push([0.0, 0.0, 0.0, 1.0]);
+            }
+        }
+        let ds = serde_json::json!({ "name": "wet-vs-dry", "samples": samples, "targets": targets });
+        std::fs::write(&path, ds.to_string()).unwrap();
+
+        let summary = system
+            .train_on_dataset(path.to_str().unwrap(), 3)
+            .expect("dataset training");
+        assert_eq!(summary.samples, 40);
+        assert_eq!(summary.epochs, 3);
+        assert_eq!(summary.trained, 120);
+        assert!(summary.final_loss.is_finite());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn dataset_validation_rejects_bad_files() {
+        let (system, _rx) = AISystem::new_clean();
+        let path = std::env::temp_dir().join("nv2_bad_dataset.json");
+
+        // Mismatched lengths.
+        std::fs::write(
+            &path,
+            serde_json::json!({ "samples": [[0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]], "targets": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]] }).to_string(),
+        )
+        .unwrap();
+        let err = system
+            .train_on_dataset(path.to_str().unwrap(), 1)
+            .expect_err("length mismatch must be rejected");
+        assert!(err.contains("mismatch"), "got: {err}");
+
+        // Empty dataset.
+        std::fs::write(&path, serde_json::json!({ "samples": [], "targets": [] }).to_string()).unwrap();
+        let err = system
+            .train_on_dataset(path.to_str().unwrap(), 1)
+            .expect_err("empty dataset must be rejected");
+        assert!(err.contains("no samples"), "got: {err}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn player_preferences_shift_training_targets() {
+        let mut ai = TerrainAI::new();
+        assert_eq!(ai.player_preferences(), [0; 4]);
+        assert_eq!(ai.preference_distribution(), [0.25; 4]);
+
+        // Player loves ferns (class 1).
+        for _ in 0..30 {
+            ai.record_preference(1);
+        }
+        for _ in 0..10 {
+            ai.record_preference(0);
+        }
+        let dist = ai.preference_distribution();
+        assert!(dist[1] > dist[0] && dist[1] > 0.5, "fern must dominate: {dist:?}");
+
+        // A neutral base target should lean toward ferns after blending.
+        let base = [0.25, 0.25, 0.25, 0.25];
+        let blended = ai.blended_target(base, 0.5);
+        assert!(blended[1] > blended[0], "blend must favour ferns: {blended:?}");
+        let sum: f32 = blended.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-4);
+
+        // Preferences survive a checkpoint round-trip.
+        let json = serde_json::to_string(&ai).unwrap();
+        let loaded: TerrainAI = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.player_preferences(), [10, 30, 0, 0]);
+    }
+
+    #[test]
+    fn model_bundle_export_matches_live_model() {
+        let (system, _rx) = AISystem::new_clean();
+        let path = std::env::temp_dir().join("nv2_bundle_eq_test.json");
+        let path = path.to_str().unwrap();
+        system.export_model(path, "a", "b", "c").unwrap();
+
+        let data = std::fs::read_to_string(path).unwrap();
+        let bundle: ModelBundle = serde_json::from_str(&data).unwrap();
+        assert_eq!(bundle.format, MODEL_BUNDLE_FORMAT);
+        assert_eq!(bundle.format_version, MODEL_BUNDLE_VERSION);
+        assert!(!bundle.exported_at.is_empty());
+        assert!(bundle.checkpoint.model_param_count() > 0);
+        assert_eq!(bundle.checkpoint.model_version(), memplp::MEMLP_VERSION);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

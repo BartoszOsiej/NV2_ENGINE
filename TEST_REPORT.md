@@ -11,14 +11,18 @@
 
 ## 1. Whole-project tests
 
-**Result: ✅ 87 passed · 0 failed · 1 ignored** (the ignored one is the
-release-only benchmark) — total 88 tests, ~6 s.
+**Result: ✅ 96 passed · 0 failed · 1 ignored** (the ignored one is the
+release-only benchmark) — total 97 tests, ~15 s.
+
+> Phase-2 features added during the 2026-08-13 sweep: community model
+> sharing (export/import), JSON training-dataset import, player-preference
+> learning, and the `/ai_*` command set — each with tests.
 
 ## 2. Per-module tests
 
 | Module | Tests | Status |
 |---|---|---|
-| `world::ai_generator` (AI system, checkpoints, procedural textures) | 10 | ✅ |
+| `world::ai_generator` (AI system, model bundles, datasets, preferences, checkpoints, textures) | 16 | ✅ |
 | `world::memplp` (**MeMLP** core — MLP train/forward, NaN hardening, migration, JSON roundtrip) | 10 | ✅ |
 | `world::block` (block registry) | 7 | ✅ |
 | `world::vegetation` (AI vegetation placement, canopies, tree pass) | 3 | ✅ |
@@ -31,18 +35,18 @@ release-only benchmark) — total 88 tests, ~6 s.
 | `renderer::camera` | 3 | ✅ |
 | `renderer::mesh` (chunk meshing + water) | 2 | ✅ |
 | `renderer::texture_registry` | 1 | ✅ |
-| `commands` | 3 | ✅ |
+| `commands` (locate/tp + `/ai_export`, `/ai_import`, `/ai_dataset`, `/ai_stats`) | 6 | ✅ |
 | `assets` | 1 | ✅ |
 
 ## 3. Module categories
 
 | Category | Modules | Tests | Status |
 |---|---|---|---|
-| **AI / ML** | ai_generator, memplp, online_trainer, vegetation, biomes | 26 | ✅ |
+| **AI / ML** | ai_generator, memplp, online_trainer, vegetation, biomes | 32 | ✅ |
 | **World & terrain** | block, world | 13 | ✅ |
 | **Gameplay** | interaction, crafting, inventory | 38 | ✅ |
 | **Renderer** | camera, mesh, texture_registry | 6 | ✅ |
-| **Shell / misc** | commands, assets | 4 | ✅ |
+| **Shell / misc** | commands, assets | 7 | ✅ |
 
 ## 4. Performance benchmark (release, single-threaded CPU)
 
@@ -95,7 +99,33 @@ train continuously in the background with zero visible frame cost.
   `Core/checkpoints/ai_model.json` was migrated to the v1 MeMLP format.
 - Biome head is consumed by `DecorationAI` (biome-aware decoration choice).
 
-## 7. NaN hardening (this sweep)
+## 7. Phase-2 features (this sweep)
+
+### Community model sharing — `ModelBundle`
+
+Portable, self-describing export format (`nv2-model-bundle`, v1) that wraps
+a full checkpoint with authorship metadata (author, description, biome
+hint, export timestamp). In-game: `/ai_export <path> [author]` and
+`/ai_import <path>`; API: `AISystem::export_model` / `import_model`.
+Imports are sanitised and persisted to the runtime checkpoint.
+
+### Training datasets — `TrainingDataset`
+
+JSON files with `samples` (8 terrain features) + `targets` (4-class
+vegetation distributions) can be trained on directly. Validation rejects
+empty/mismatched files and skips non-finite rows. In-game:
+`/ai_dataset <path> [epochs]`; API: `AISystem::train_on_dataset`.
+
+### Player-preference learning
+
+`TerrainAI` now tracks per-class preference counters (flower/fern/stick/
+pebble) in the checkpoint (`#[serde(default)]` — old checkpoints stay
+compatible). Placing a vegetation block increments its counter; the
+background loop blends heuristic targets with the learned distribution
+(30% weight), so the model leans toward what the player likes.
+`/ai_stats` shows the live counters.
+
+## 8. NaN hardening (this sweep)
 
 A real bug found by the QA sweep: background training could explode weights
 into NaN (unbounded gradient updates). serde_json serialises NaN as JSON
@@ -116,3 +146,11 @@ Regression tests: `training_survives_extreme_inputs_without_nan`,
 `training_skips_nan_inputs_without_touching_weights`, `sanitize_clears_nan_and_inf`
 (`memplp.rs`) and `poisoned_checkpoint_with_null_weights_still_loads`
 (`ai_generator.rs`).
+
+Phase-2 tests: `model_bundle_export_import_roundtrip`,
+`model_bundle_export_matches_live_model`, `import_rejects_non_bundle_files`,
+`train_on_dataset_imports_and_reduces_loss`,
+`dataset_validation_rejects_bad_files`, `player_preferences_shift_training_targets`
+(`ai_generator.rs`) and `ai_export_import_commands_roundtrip`,
+`ai_stats_command_reports_live_model`, `ai_commands_validate_usage`
+(`commands.rs`).

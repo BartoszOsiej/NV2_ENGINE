@@ -8,6 +8,18 @@
 - ✅ No network dependency
 - ✅ 1.2 KB model size
 
+### Phase 2 — Status (2026-08-13 sweep)
+- ✅ **Training-dataset import** — JSON datasets (`samples` + `targets`)
+  validated and trained via `AISystem::train_on_dataset` / `/ai_dataset`
+- ✅ **Community model sharing** — portable `ModelBundle` export/import via
+  `AISystem::export_model` / `import_model` / `/ai_export` / `/ai_import`
+- ✅ **Player-preference learning** — per-class preference counters in the
+  checkpoint, blended into training targets (see `TerrainAI`)
+- ⬜ GPU texture generation — still CPU-procedural (deterministic, works on
+  any hardware)
+- ⬜ Multi-scale feature learning — single-scale MeMLP heads
+- ⬜ Cloud upload/download endpoints — local file sharing works today
+
 ### Phase 2 Goals (Planned)
 
 ## Feature 1: Internet-Based Dataset Integration
@@ -269,7 +281,7 @@ impl TextureAtlas {
 
 ---
 
-## Feature 3: Online Learning from Player Actions
+## Feature 3: Online Learning from Player Actions — ✅ Done (2026-08-13)
 
 ### Goal
 Learn player preferences and improve terrain suggestions
@@ -356,7 +368,7 @@ fn background_training_loop(
 
 ---
 
-## Feature 4: Cloud Model Sharing (Multiplayer)
+## Feature 4: Cloud Model Sharing (Multiplayer) — ✅ Local part done (2026-08-13)
 
 ### Goal
 Share learned terrain styles between servers/players
