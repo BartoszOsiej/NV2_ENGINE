@@ -128,9 +128,41 @@ impl Mlp {
         unreachable!("an MLP always has at least one weight layer")
     }
 
+    /// Replace any non-finite (NaN/Inf) weight with `0.0`.
+    ///
+    /// Recovers a model from a numerical blow-up instead of letting NaN
+    /// poison the checkpoint file (serde_json serialises NaN as JSON
+    /// `null`, which corrupts the file on reload).
+    pub fn sanitize(&mut self) {
+        for w in self.weights.iter_mut() {
+            for v in w.iter_mut() {
+                if !v.is_finite() {
+                    *v = 0.0;
+                }
+            }
+        }
+        for b in self.biases.iter_mut() {
+            for v in b.iter_mut() {
+                if !v.is_finite() {
+                    *v = 0.0;
+                }
+            }
+        }
+    }
+
     /// One gradient-descent step on a single sample. Returns the
     /// cross-entropy loss before the update (lower = better fit).
+    ///
+    /// Numerically hardened: inputs are validated, gradients are clipped and
+    /// weight updates are bounded, so a single extreme sample (or a long
+    /// training run) can never explode the weights into NaN/Inf.
     pub fn train(&mut self, input: &[f32], target: &[f32], learning_rate: f32) -> f32 {
+        // Guard against poisoned inputs (NaN/Inf features or labels) — skip
+        // the update entirely instead of propagating the poison.
+        if !input.iter().chain(target.iter()).all(|v| v.is_finite()) {
+            return f32::INFINITY;
+        }
+
         let layers = self.weights.len();
 
         // Forward pass, remembering pre-activations for the ReLU backprop.
@@ -155,8 +187,12 @@ impl Mlp {
             .map(|(&t, &p)| -(t * p.max(1e-7).ln()))
             .sum();
 
-        // Softmax + cross-entropy gradient is simply (p - t).
+        // Softmax + cross-entropy gradient is simply (p - t), clipped so a
+        // single bad sample cannot explode the weights.
         let mut delta = out - &Array1::from(target.to_vec());
+        for d in delta.iter_mut() {
+            *d = d.clamp(-5.0, 5.0);
+        }
 
         // Backpropagation, layer by layer.
         for k in (0..layers).rev() {
@@ -167,10 +203,14 @@ impl Mlp {
                     continue;
                 }
                 for i in 0..h_prev.len() {
-                    self.weights[k][[i, j]] -= learning_rate * dj * h_prev[i];
+                    // Bound the per-parameter update: a long training run can
+                    // never push a single weight past ±1 per sample.
+                    let update = (learning_rate * dj * h_prev[i]).clamp(-1.0, 1.0);
+                    self.weights[k][[i, j]] -= update;
                 }
             }
-            self.biases[k] -= &(learning_rate * &delta);
+            let bias_update = (&(learning_rate * &delta)).mapv(|d| d.clamp(-1.0, 1.0));
+            self.biases[k] -= &bias_update;
 
             if k > 0 {
                 // Gradient through the previous layer's ReLU.
@@ -183,6 +223,13 @@ impl Mlp {
                 }
                 delta = nd;
             }
+        }
+
+        if !loss.is_finite() {
+            // Numerical blow-up despite the clipping — reset the offending
+            // weights instead of letting NaN poison the checkpoint.
+            self.sanitize();
+            return 0.0;
         }
 
         loss
@@ -223,6 +270,13 @@ fn default_learning_rate() -> f32 {
 }
 
 impl MeMLP {
+    /// Replace every non-finite weight in every module with `0.0`.
+    pub fn sanitize(&mut self) {
+        self.vegetation.sanitize();
+        self.biome.sanitize();
+        self.texture.sanitize();
+    }
+
     /// A fresh modular model: deep vegetation net + biome + texture heads.
     pub fn new() -> Self {
         Self {
@@ -444,6 +498,60 @@ mod tests {
             loaded.vegetation.forward(&feats),
             model.vegetation.forward(&feats)
         );
+    }
+
+    #[test]
+    fn training_survives_extreme_inputs_without_nan() {
+        // Extreme magnitudes must never poison the weights: after heavy
+        // training the checkpoint must stay free of `null` (NaN) values.
+        let mut mlp = Mlp::new(&VEGETATION_ARCH);
+        for _ in 0..50 {
+            mlp.train(
+                &[1e6, -1e6, 1e5, -1e5, 1e4, -1e4, 1e3, -1e3],
+                &[1.0, 0.0, 0.0, 0.0],
+                0.05,
+            );
+        }
+        mlp.sanitize();
+        let model = MeMLP {
+            version: MEMLP_VERSION,
+            vegetation: mlp,
+            biome: Mlp::new(&BIOME_ARCH),
+            texture: Mlp::new(&TEXTURE_ARCH),
+        };
+        let json = serde_json::to_string(&model).unwrap();
+        assert!(
+            !json.contains("null"),
+            "NaN weights would serialise as null: {json}"
+        );
+        let loaded: MeMLP = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.param_count(), model.param_count());
+    }
+
+    #[test]
+    fn training_skips_nan_inputs_without_touching_weights() {
+        let mut mlp = Mlp::new(&[2, 4, 2]);
+        let before = mlp.clone();
+        let loss = mlp.train(&[f32::NAN, 0.5], &[1.0, 0.0], 0.1);
+        assert!(loss.is_infinite(), "poisoned input must be rejected");
+        for (wa, wb) in mlp.weights.iter().zip(before.weights.iter()) {
+            assert_eq!(wa, wb, "weights must stay untouched on poisoned input");
+        }
+    }
+
+    #[test]
+    fn sanitize_clears_nan_and_inf() {
+        let mut mlp = Mlp::new(&[2, 4, 2]);
+        mlp.weights[0][[0, 0]] = f32::NAN;
+        mlp.weights[1][[1, 0]] = f32::INFINITY;
+        mlp.biases[0][0] = f32::NEG_INFINITY;
+        mlp.sanitize();
+        for w in &mlp.weights {
+            assert!(w.iter().all(|v| v.is_finite()));
+        }
+        for b in &mlp.biases {
+            assert!(b.iter().all(|v| v.is_finite()));
+        }
     }
 
     #[test]
