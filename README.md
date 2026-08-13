@@ -79,6 +79,22 @@ Modules — one checkpoint file, implemented in `Core/Src/world/memplp.rs`:
 - Commands, menus, save / load
 - Chunk-based world simulation
 
+## 🤖 NV2.0 Phase-2 features
+
+- **Community model sharing** — `/ai_export <path> [author]` writes a
+  portable `nv2-model-bundle` (checkpoint + author/description/biome
+  metadata); `/ai_import <path>` loads any shared bundle and persists it.
+- **Training datasets** — `/ai_dataset <path> [epochs]` trains the
+  vegetation head on a JSON dataset (`samples` + `targets`) with full
+  validation.
+- **Player-preference learning** — the model tracks which vegetation the
+  player likes placing (counters live in the checkpoint) and blends its
+  training targets toward that taste; `/ai_stats` shows live stats and
+  preferences.
+
+Commands: `/locate`, `/tp`, `/ai_export`, `/ai_import`, `/ai_dataset`,
+`/ai_stats`.
+
 ## 🛠️ Tech stack
 
 | Area | Technology |

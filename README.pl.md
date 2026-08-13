@@ -80,6 +80,20 @@ Moduły — jeden plik checkpointu, implementacja w `Core/Src/world/memplp.rs`:
 - Komendy, menu, zapis / odczyt
 - Symulacja świata oparta na chunkach
 
+## 🤖 Funkcje Fazy 2 (NV2.0)
+
+- **Współdzielenie modeli** — `/ai_export <path> [author]` zapisuje
+  przenośny `nv2-model-bundle` (checkpoint + metadane autora/opisu/biomu);
+  `/ai_import <path>` wczytuje dowolny współdzielony bundle i go utrwala.
+- **Datasety treningowe** — `/ai_dataset <path> [epochs]` trenuje głowę
+  roślinności na zbiorze JSON (`samples` + `targets`) z pełną walidacją.
+- **Uczenie preferencji gracza** — model śledzi, jaką roślinność gracz lubi
+  stawiać (liczniki w checkpointcie) i miesza cele treningowe ku temu
+  gustowi; `/ai_stats` pokazuje statystyki i preferencje.
+
+Komendy: `/locate`, `/tp`, `/ai_export`, `/ai_import`, `/ai_dataset`,
+`/ai_stats`.
+
 ## 🛠️ Stack technologiczny
 
 | Obszar | Technologia |
