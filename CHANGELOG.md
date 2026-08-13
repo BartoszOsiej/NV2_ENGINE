@@ -1,5 +1,27 @@
 # 📝 Change Log - AI System Implementation
 
+## NV2.0 — NaN Hardening (2026-08-13)
+
+A real bug found by the Docs QA sweep: background training could explode
+weights into **NaN** (unbounded gradient updates). serde_json serialises NaN
+as JSON `null`, which made the whole checkpoint unloadable — the trained
+model was silently discarded on the next start.
+
+Fixed in three layers (`Core/Src/world/memplp.rs`, `Core/Src/world/ai_generator.rs`):
+
+1. **`Mlp::train`** — NaN/Inf inputs are rejected; gradients clipped to ±5;
+   per-parameter updates bounded to ±1; a non-finite loss triggers a full
+   weight sanitise instead of propagating the poison.
+2. **`save_checkpoint`** — sanitises a clone (NaN/Inf → 0.0) before writing,
+   so the on-disk file can never contain `null` weights.
+3. **`load_checkpoint`** — tolerant loading: JSON `null` weights read back
+   as `0.0`, so even a previously-poisoned checkpoint loads.
+
+4 new regression tests (`memplp.rs` × 3, `ai_generator.rs` × 1). Suite is now
+**87 passed / 0 failed** (88 total incl. the ignored release benchmark).
+
+---
+
 ## NV2.0 — MeMLP Upgrade (2026-08-13)
 
 ### Architecture: MeMLP (Modular embedded Multi-layer Perceptron Model)

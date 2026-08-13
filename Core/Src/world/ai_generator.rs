@@ -45,7 +45,7 @@ pub enum AIMessage {
 /// (8→12→9) and texture (8→12→6) heads, all serialisable to one JSON
 /// checkpoint. Legacy single-hidden-layer checkpoints are migrated
 /// automatically on load.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct TerrainAI {
     /// The modular neural model.
     model: MeMLP,
@@ -73,6 +73,31 @@ struct LegacyTerrainAI {
 
 fn default_lr() -> f32 {
     0.01
+}
+
+/// Recursively replace every JSON `null` with the number `0.0`.
+///
+/// Used by [`TerrainAI::load_checkpoint`] to tolerate checkpoints whose
+/// weights contain NaN (serialised by serde_json as `null`).
+fn replace_nulls_with_zero(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Null => {
+            // Integer 0 deserialises cleanly into both f32 weights and
+            // u64/usize fields (a float 0.0 would fail for the latter).
+            *value = serde_json::Value::Number(serde_json::Number::from(0u64));
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                replace_nulls_with_zero(item);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for item in map.values_mut() {
+                replace_nulls_with_zero(item);
+            }
+        }
+        _ => {}
+    }
 }
 
 impl<'de> Deserialize<'de> for TerrainAI {
@@ -218,7 +243,12 @@ impl TerrainAI {
                 std::fs::create_dir_all(parent)?;
             }
         }
-        let json = serde_json::to_string_pretty(self)?;
+        // Never write NaN/Inf: serde_json would serialise them as JSON
+        // `null`, silently corrupting the checkpoint. Sanitise a clone
+        // before serialising (the model is ~1 KB, cloning is free).
+        let mut clean = self.clone();
+        clean.model.sanitize();
+        let json = serde_json::to_string_pretty(&clean)?;
         std::fs::write(path, json)?;
         Ok(())
     }
@@ -227,7 +257,12 @@ impl TerrainAI {
     /// missing or corrupt — the caller falls back to a fresh model.
     pub fn load_checkpoint<P: AsRef<Path>>(path: P) -> Option<Self> {
         let data = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&data).ok()
+        let mut value: serde_json::Value = serde_json::from_str(&data).ok()?;
+        // NaN/Inf floats are serialised as JSON `null` (JSON has no NaN).
+        // Read those back as 0.0 so a checkpoint whose training briefly
+        // produced NaN still loads instead of being discarded.
+        replace_nulls_with_zero(&mut value);
+        serde_json::from_value(value).ok()
     }
 
     /* ------------------------------------------------------------ */
@@ -1082,6 +1117,65 @@ mod tests {
         let loaded = TerrainAI::load_checkpoint(&path).expect("load checkpoint");
         let features = [0.1, 0.4, 0.7, 0.8, 0.2, 0.6, 0.9, 0.3];
         assert_eq!(ai.forward(&features), loaded.forward(&features));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn poisoned_checkpoint_with_null_weights_still_loads() {
+        // Regression: NaN weights are serialised as JSON `null`, which used
+        // to make the whole checkpoint unloadable. Nulls must read back as
+        // 0.0 and the model must load with its full parameter count.
+        // Only `data` arrays hold weights — nullify their elements (the
+        // ndarray `v`/`dim` fields must stay intact).
+        fn nullify_weights(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::Object(map) => {
+                    if map.contains_key("data") {
+                        if let Some(serde_json::Value::Array(items)) = map.get_mut("data") {
+                            for item in items {
+                                *item = serde_json::Value::Null;
+                            }
+                            return;
+                        }
+                    }
+                    for item in map.values_mut() {
+                        nullify_weights(item);
+                    }
+                }
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        nullify_weights(item);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let path = std::env::temp_dir().join("nv2_poisoned_checkpoint_test.json");
+        let ai = TerrainAI::new();
+        ai.save_checkpoint(&path).expect("save checkpoint");
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        nullify_weights(&mut value);
+        std::fs::write(&path, value.to_string()).unwrap();
+
+        let loaded = TerrainAI::load_checkpoint(&path).unwrap_or_else(|| {
+            let data = std::fs::read_to_string(&path).unwrap();
+            let mut v: serde_json::Value = serde_json::from_str(&data).unwrap();
+            replace_nulls_with_zero(&mut v);
+            let err = match serde_json::from_value::<TerrainAI>(v) {
+                Ok(_) => String::new(),
+                Err(e) => e.to_string(),
+            };
+            panic!("poisoned checkpoint must load — deserialization error: {err}")
+        });
+        assert_eq!(
+            loaded.model_param_count(),
+            ai.model_param_count(),
+            "null weights become 0.0, param count stays intact"
+        );
+        assert_eq!(loaded.model_version(), memplp::MEMLP_VERSION);
         let _ = std::fs::remove_file(&path);
     }
 
