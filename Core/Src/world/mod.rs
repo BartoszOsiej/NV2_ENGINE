@@ -8,6 +8,8 @@ pub mod liquid;
 pub mod vegetation;
 pub mod worldgen;
 pub mod ai_generator;
+pub mod ai_feedback;
+pub mod memplp;
 pub mod decorations;
 pub mod decoration_ai;
 pub mod online_trainer;
@@ -82,6 +84,35 @@ struct WorldSave {
 impl World {
     pub fn new(seed: u32) -> Self {
         Self::new_with_settings(seed, SharedSettings::default())
+    }
+
+    /// Create a world with a fresh AI model (no checkpoint loaded).
+    ///
+    /// Tests use this so vegetation outcomes are deterministic regardless of
+    /// any `checkpoints/ai_model.json` left behind by a previous run.
+    #[cfg(test)]
+    pub fn new_for_tests(seed: u32) -> Self {
+        let (chunk_gen, gen_receiver) = ChunkGenerator::new_with_seed_and_settings(
+            seed,
+            SharedSettings::default(),
+        );
+        let generator = Arc::clone(chunk_gen.generator());
+        let (ai_system, ai_receiver) = ai_generator::AISystem::new_clean();
+        Self {
+            chunks: HashMap::new(),
+            generator,
+            chunk_gen,
+            gen_receiver,
+            pending_chunks: std::collections::HashSet::new(),
+            pending_world_writes: HashMap::new(),
+            tree_populated_chunks: HashSet::new(),
+            nvcrafter_states: HashMap::new(),
+            dropped_items: Vec::new(),
+            settings: SharedSettings::default(),
+            ai_system,
+            ai_receiver,
+            decorations: DecorationManager::new(),
+        }
     }
 
     pub fn new_with_settings(seed: u32, settings: SharedSettings) -> Self {

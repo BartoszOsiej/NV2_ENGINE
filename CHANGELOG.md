@@ -1,5 +1,30 @@
 # 📝 Change Log - AI System Implementation
 
+## NV2.0 — MeMLP Upgrade (2026-08-13)
+
+### Architecture: MeMLP (Modular embedded Multi-layer Perceptron Model)
+
+**New file**: `Core/Src/world/memplp.rs` — generic multi-layer perceptron
+(`Mlp`, any depth, ReLU hidden layers, softmax output, online backprop) plus
+the modular container `MeMLP`.
+
+| Module | Old | New |
+|---|---|---|
+| `vegetation` | 8 → 16 → 4 (single hidden layer) | **8 → 24 → 16 → 4** (deep MLP) |
+| `biome` | — | **8 → 12 → 9** (9 world biomes) |
+| `texture` | — | **8 → 12 → 6** (texture styles) |
+
+- `TerrainAI` now wraps a `MeMLP`; the engine-facing API is unchanged.
+- **Backward compatible checkpoints** — legacy `w1/b1/w2/b2` files are
+  detected and migrated on load (trained weights preserved). The shipped
+  `checkpoints/ai_model.json` was migrated to v1 MeMLP format.
+- Background training loop now trains all three heads every epoch.
+- `DecorationAI` consumes the biome head (biome-aware decorations).
+- Added: `predict_biome`, `predict_texture_style`, `model_stats`,
+  `qa_benchmark_report` benchmark test, `TEST_REPORT.md`.
+
+---
+
 ## What Was Changed
 
 ### 1. **Increased World Height Limit** 

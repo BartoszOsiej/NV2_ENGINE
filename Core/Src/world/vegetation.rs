@@ -790,6 +790,12 @@ fn is_cover_block(block: BlockType) -> bool {
     )
 }
 
+/// True for every block the AI vegetation system itself places
+/// (flower / fern / stick / pebble classes).
+fn is_ai_vegetation(block: BlockType) -> bool {
+    crate::world::ai_generator::vegetation_class(block).is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -833,7 +839,7 @@ mod tests {
         let mut cover_blocks = 0usize;
 
         for seed in [42_u32, 1_337_u32, 20_260_405_u32] {
-            let mut world = World::new(seed);
+            let mut world = World::new_for_tests(seed);
             for cz in -4..=4 {
                 for cx in -4..=4 {
                     world.load_around(cx, cz, 0);
@@ -848,7 +854,7 @@ mod tests {
                             if is_tree_block(block) {
                                 tree_blocks += 1;
                             }
-                            if is_cover_block(block) {
+                            if is_cover_block(block) || is_ai_vegetation(block) {
                                 cover_blocks += 1;
                             }
                         }

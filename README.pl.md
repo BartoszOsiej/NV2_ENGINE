@@ -35,27 +35,43 @@ Co zobaczysz:
 - Kwiaty, paprocie i kamyki rozmieszczane inteligentnie przez sieć neuronową
 - AI uczy się w tle (bez wpływu na FPS)
 
-## 🤖 System roślinności AI
+## 🤖 AI — MeMLP (Modular embedded Multi-layer Perceptron Model)
 
-Lekki MLP (perceptron wielowarstwowy) uczący się w tle decyduje, gdzie mają
-rosnąć rośliny:
+Cały stos AI działa na **MeMLP** — modułowej, osadzonej sieci neuronowej,
+która żyje wewnątrz silnika (czysty CPU, checkpointy JSON, bez chmury i GPU):
 
 ```
 Wejście: 8 cech terenu (wysokość, nachylenie, temperatura bioma, wilgotność,
          odległość od wody, sąsiednia roślinność, światło, szum)
     ↓
-ReLU (16 neuronów)
+Głowa roślinności (głębokie MLP 8 → 24 → 16 → 4, ReLU + softmax)
     ↓
 Softmax (4 wyjścia: kwiat / paproć / patyk / kamyk)
     ↓
-Rozmieszczenie ograniczone biome (Forest 70%, Swamp 50%, …) i pewnością
+Rozmieszczenie ograniczone pewnością + dekoracje zależne od bioma (głowa biome)
 ```
+
+Moduły — jeden plik checkpointu, implementacja w `Core/Src/world/memplp.rs`:
+
+| Moduł | Kształt | Zadanie |
+|---|---|---|
+| `vegetation` | 8 → 24 → 16 → 4 | rozmieszczanie kwiat / paproć / patyk / kamyk |
+| `biome` | 8 → 12 → 9 | klasyfikacja bioma (9 biomów, steruje dekoracjami) |
+| `texture` | 8 → 12 → 6 | wybór stylu tekstur proceduralnych |
 
 - **22 nowe typy roślin** — róże, tulipany, stokrotki, rośliny wodne, mech,
   patyki, kamyki i więcej
-- **Uczenie online** — 100 próbek na epokę, ~5–10 ms na epokę, adaptacyjne
-  zmniejszanie learning rate
-- **Mały rozmiar** — 320 parametrów, model 1.2 KB, ~0.01 ms na predykcję
+- **Uczy się od gracza** — stawianie/niszczenie roślinności jest zapisywane
+  jako feedback treningowy (`Core/Src/world/ai_feedback.rs`)
+- **Uczenie online** — prawdziwe dane klimatyczne (Open-Meteo) łączone z
+  treningiem, z bezpiecznym fallbackiem offline
+- **Wstecznie kompatybilny** — stare checkpointy z jedną warstwą ukrytą są
+  wykrywane i migrowane automatycznie
+- **Mały rozmiar** — checkpoint ~1 KB, ~0.3 µs na predykcję, miliony próbek
+  treningowych/s w wątku tła (patrz `TEST_REPORT.md`)
+
+> Reprodukowalność: `cargo test --release qa_benchmark_report -- --ignored --nocapture`
+> ponownie uruchamia pełny benchmark MeMLP.
 
 ## 🧱 Rozgrywka
 

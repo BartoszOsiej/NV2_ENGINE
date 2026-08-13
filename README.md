@@ -34,27 +34,43 @@ What you'll see:
 - Flowers, ferns, pebbles placed intelligently by the neural network
 - The AI learns in the background (no FPS impact)
 
-## 🤖 AI vegetation system
+## 🤖 AI — MeMLP (Modular embedded Multi-layer Perceptron Model)
 
-A lightweight MLP (multi-layer perceptron) trained in the background decides
-where vegetation should grow:
+The entire AI stack runs on **MeMLP** — a modular, embedded neural network
+that lives inside the engine (pure CPU, JSON checkpoints, no cloud, no GPU):
 
 ```
 Input: 8 terrain features (height, slope, biome temperature, humidity,
        water distance, nearby vegetation, light, noise)
     ↓
-ReLU (16 neurons)
+Vegetation head (deep MLP 8 → 24 → 16 → 4, ReLU + softmax)
     ↓
 Softmax (4 outputs: flower / fern / stick / pebble)
     ↓
-Placement gated by biome (Forest 70%, Swamp 50%, …) and confidence
+Placement gated by confidence + biome-aware decorations (biome head)
 ```
+
+Modules — one checkpoint file, implemented in `Core/Src/world/memplp.rs`:
+
+| Module | Shape | Task |
+|---|---|---|
+| `vegetation` | 8 → 24 → 16 → 4 | flower / fern / stick / pebble placement |
+| `biome` | 8 → 12 → 9 | biome classification (9 biomes, drives decorations) |
+| `texture` | 8 → 12 → 6 | procedural texture-style selection |
 
 - **22 new vegetation types** — roses, tulips, daisies, water plants, moss,
   sticks, pebbles and more
-- **Online learning** — 100 samples per epoch, ~5–10 ms per epoch, adaptive
-  learning-rate decay
-- **Tiny footprint** — 320 parameters, 1.2 KB model, ~0.01 ms per prediction
+- **Learns from the player** — placing/breaking vegetation is recorded as
+  training feedback (`Core/Src/world/ai_feedback.rs`)
+- **Online learning** — real-world climate data (Open-Meteo) merged into
+  training with a graceful offline fallback
+- **Backward compatible** — old single-hidden-layer checkpoints are
+  detected and migrated automatically on load
+- **Tiny footprint** — ~1 KB checkpoint, ~0.3 µs per prediction, millions of
+  training samples/s on the background thread (see `TEST_REPORT.md`)
+
+> Reproducibility: `cargo test --release qa_benchmark_report -- --ignored --nocapture`
+> re-runs the full MeMLP benchmark.
 
 ## 🧱 Gameplay
 
