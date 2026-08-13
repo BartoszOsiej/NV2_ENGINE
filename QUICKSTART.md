@@ -9,69 +9,69 @@ cargo run --release
 ```
 
 ### What You'll See
-- ✅ Silnik ładuje się bez opóźnień
-- ✅ Świat generuje się z AI-powered roślinością
-- ✅ Kwiaty, paproci, kamyki rozmieszczane inteligentnie
-- ✅ AI uczy się w tle (bez wpływu na FPS)
+- ✅ Engine boots with no lag
+- ✅ World generates with AI-powered vegetation
+- ✅ Flowers, ferns, pebbles placed intelligently
+- ✅ AI learns in the background (no FPS impact)
 
 ---
 
 ## 🤖 What's New: AI System
 
 ### Features
-✨ **22 nowych typów roślin**
-- Róże, tulipany, stokrotki, albamis
-- Paproci, rośliny wodne, mech
-- Małe patyki i kamyczki
+✨ **22 new plant types**
+- Roses, tulips, daisies, allium
+- Ferns, water plants, moss
+- Small sticks and pebbles
 
-🧠 **Inteligentna generacja**
-- AI predykuje gdzie rosnąć powinny rośliny
-- Nauka w tle (asynchronicznie)
-- Zero impact na gameplay
-- Doskonale wygląda!
+🧠 **Intelligent generation**
+- AI predicts where plants should grow
+- Background learning (asynchronous)
+- Zero gameplay impact
+- Looks great!
 
-🚀 **Szybkie uczenie**
-- 100 próbek na epokę
+🚀 **Fast learning**
+- 100 samples per epoch
 - ~5-10ms per epoch
-- Adaptacyjne zmniejszanie learning rate
+- Adaptive learning rate decay
 
 ---
 
-## 📊 Jak to działa
+## 📊 How it works
 
-### 1. Ekstrakcja Features (cechy terenu)
+### 1. Feature Extraction (terrain features)
 ```
-Wysokość terenu       → 0.0-1.0
-Nachylenie           → 0.0-0.5  
-Temperatura bioma    → 0.0-1.0
-Wilgotność bioma     → 0.0-1.0
-Odległość od wody    → 0.0-1.0
-Liczba roślin obok   → 0.0-1.0
-Poziom światła       → 0.0-1.0
-Szum procedurowy     → 0.0-1.0
+Terrain height      → 0.0-1.0
+Slope               → 0.0-0.5
+Biome temperature   → 0.0-1.0
+Biome humidity      → 0.0-1.0
+Water distance      → 0.0-1.0
+Nearby plant count  → 0.0-1.0
+Light level         → 0.0-1.0
+Procedural noise    → 0.0-1.0
 ```
 
 ### 2. AI Forward Pass
 ```
-8 cech wejściowych
+8 input features
         ↓
-   ReLU(16 neuronów)
+   ReLU(16 neurons)
         ↓
-  Softmax(4 rodzaje)
+  Softmax(4 types)
         ↓
-Kwiat/Paproć/Patyk/Kamyk
+Flower/Fern/Stick/Pebble
 ```
 
-### 3. Rozmieszczenie
+### 3. Placement
 ```
-Jeśli confidence > 0.5:
-  - Sprawdź biom (Forest: 70%, Swamp: 50%, etc.)
-  - Postaw blok z prawdopodobieństwem
+If confidence > 0.5:
+  - Check biome (Forest: 70%, Swamp: 50%, etc.)
+  - Place block with probability
 ```
 
 ---
 
-## 🧠 AI Architektura
+## 🧠 AI Architecture
 
 ```
 ┌─────────────────────┐
@@ -91,61 +91,61 @@ Jeśli confidence > 0.5:
 - Stochastic gradient descent
 - Cross-entropy loss
 - Backpropagation
-- Learning rate: 0.01 (decay 0.95x co 1000 epok)
+- Learning rate: 0.01 (decay 0.95x every 1000 epochs)
 
 ---
 
-## 📁 Główne pliki
+## 📁 Main files
 
 ```
 Core/
 ├── Src/
 │   ├── world/
 │   │   ├── ai_generator.rs      ← AI system (NEW)
-│   │   ├── block.rs             ← 22 nowe bloki
+│   │   ├── block.rs             ← 22 new blocks
 │   │   ├── vegetation.rs        ← place_ai_vegetation()
 │   │   └── mod.rs               ← AISystem integration
 │   └── main.rs
-└── Cargo.toml                   ← Nowe dependencies
+└── Cargo.toml                   ← New dependencies
 ```
 
-**Dokumentacja:**
-- `AI_IMPLEMENTATION_SUMMARY.md` - Przegląd
-- `AI_TECHNICAL_DOCS.md` - Szczegóły techniczne
-- `AI_PHASE2_ROADMAP.md` - Przyszłe plany
-- `CHANGELOG.md` - Co się zmieniło
+**Documentation:**
+- `AI_IMPLEMENTATION_SUMMARY.md` - Overview
+- `AI_TECHNICAL_DOCS.md` - Technical details
+- `AI_PHASE2_ROADMAP.md` - Future plans
+- `CHANGELOG.md` - What changed
 
 ---
 
 ## 🎯 Customize AI
 
-### Zmień Cell Size
+### Change Cell Size
 ```rust
 // vegetation.rs
-const AI_VEGETATION_CELL_SIZE: i32 = 3;  // Zmień na 5 dla rzadszej rozmieszczenia
+const AI_VEGETATION_CELL_SIZE: i32 = 3;  // Change to 5 for sparser placement
 ```
 
-### Zmień Confidence Threshold
+### Change Confidence Threshold
 ```rust
-// vegetation.rs - w place_ai_vegetation()
-if confidence > 0.5 {  // Zmień na 0.7 dla bardziej selekcyjnego rozmieszczenia
+// vegetation.rs - in place_ai_vegetation()
+if confidence > 0.5 {  // Change to 0.7 for more selective placement
     // ...
 }
 ```
 
-### Zmień Learning Rate
+### Change Learning Rate
 ```rust
 // ai_generator.rs - TerrainAI::new()
 pub fn new() -> Self {
     // ...
-    learning_rate: 0.01,  // Zmień dla szybszego/wolniejszego uczenia
+    learning_rate: 0.01,  // Change for faster/slower learning
 ```
 
-### Dodaj Nowy Typ Rośliny
-1. **block.rs**: Dodaj do BLOCK_REGISTRY i BlockType enum
-2. **block.rs**: Zmapuj teksturę w texture registry
-3. **ai_generator.rs**: Dodaj nowy output (zmień z 4 na 5)
-4. **vegetation.rs**: Aktualizuj match statement w place_ai_vegetation()
+### Add a New Plant Type
+1. **block.rs**: Add to BLOCK_REGISTRY and the BlockType enum
+2. **block.rs**: Map a texture in the texture registry
+3. **ai_generator.rs**: Add a new output (change from 4 to 5)
+4. **vegetation.rs**: Update the match statement in place_ai_vegetation()
 
 ---
 
@@ -153,47 +153,47 @@ pub fn new() -> Self {
 
 ### Performance Tuning
 
-**Szybsze (mniej dokładności):**
+**Faster (less accuracy):**
 ```rust
-const SAMPLES_PER_EPOCH: usize = 50;        // z 100
-learning_rate: 0.05,                        // z 0.01
-const AI_VEGETATION_CELL_SIZE: i32 = 6;    // z 3
+const SAMPLES_PER_EPOCH: usize = 50;        // from 100
+learning_rate: 0.05,                        // from 0.01
+const AI_VEGETATION_CELL_SIZE: i32 = 6;    // from 3
 ```
 
-**Dokładniejsze (wolniej):**
+**More accurate (slower):**
 ```rust
-const SAMPLES_PER_EPOCH: usize = 200;       // z 100
-learning_rate: 0.005,                       // z 0.01
-const AI_VEGETATION_CELL_SIZE: i32 = 2;    // z 3
+const SAMPLES_PER_EPOCH: usize = 200;       // from 100
+learning_rate: 0.005,                       // from 0.01
+const AI_VEGETATION_CELL_SIZE: i32 = 2;    // from 3
 ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Roślinność nie pojawia się
+### Vegetation doesn't appear
 ```rust
-// Sprawdź confidence threshold
+// Check the confidence threshold
 println!("Confidence: {}", confidence);
 ```
 
-### Zbyt powolne trenowanie
+### Training too slow
 ```rust
-// Zmniejsz samples_per_epoch
-// Lub zwiększ learning_rate
+// Reduce samples_per_epoch
+// Or increase learning_rate
 ```
 
-### Zbyt dużo roślin
+### Too many plants
 ```rust
-// Zmniejsz placement_chance w danym biome
-// Lub zwiększ confidence threshold
+// Reduce placement_chance in the given biome
+// Or increase the confidence threshold
 ```
 
 ---
 
 ## 📈 Performance
 
-| Metrika | Wartość |
+| Metric | Value |
 |---------|---------|
 | Startup | +0ms |
 | FPS Impact | <1% |
@@ -211,25 +211,25 @@ println!("Confidence: {}", confidence);
 - [ ] Community model sharing
 - [ ] Player preference learning
 
-Szczegóły w `AI_PHASE2_ROADMAP.md`
+Details in `AI_PHASE2_ROADMAP.md`
 
 ---
 
-## 📚 Dokumentacja
+## 📚 Documentation
 
-### Dla Ggraczy
-- Gra działa normalnie
-- Więcej zróżnicowanej roślinności
-- Naturalnie wygląda
-- Bez opóźnień!
+### For Players
+- The game runs normally
+- More varied vegetation
+- Looks natural
+- No lag!
 
-### Dla Developerów
-1. **`AI_IMPLEMENTATION_SUMMARY.md`** - Start tutaj
-2. **`AI_TECHNICAL_DOCS.md`** - Matematyka i implementacja
-3. **`CHANGELOG.md`** - Co się zmieniło
+### For Developers
+1. **`AI_IMPLEMENTATION_SUMMARY.md`** - Start here
+2. **`AI_TECHNICAL_DOCS.md`** - Math and implementation
+3. **`CHANGELOG.md`** - What changed
 
-### Dla Researchers
-- Lightweight MLP na Rust
+### For Researchers
+- Lightweight MLP in Rust
 - Online learning
 - Procedural generation
 - Terrain feature extraction
@@ -238,7 +238,7 @@ Szczegóły w `AI_PHASE2_ROADMAP.md`
 
 ## 💡 Tips & Tricks
 
-### Obserwuj trenowanie
+### Watch training
 ```rust
 // ai_generator.rs - background_training_loop()
 if epoch % 100 == 0 {
@@ -246,13 +246,13 @@ if epoch % 100 == 0 {
 }
 ```
 
-### Zapisz model
+### Save the model
 ```rust
 // Planned for Phase 2
 ai_system.save_checkpoint("forest_v1.bin")?;
 ```
 
-### Load custom model
+### Load a custom model
 ```rust
 // Planned for Phase 2
 ai_system.load_checkpoint("forest_v1.bin")?;
@@ -262,11 +262,11 @@ ai_system.load_checkpoint("forest_v1.bin")?;
 
 ## 🎊 Summary
 
-✅ **Kompiluje się bez błędów**
-✅ **Działa bez zatrzymań**
-✅ **AI się uczy w tle**
-✅ **Roślinność naturalnie wygląda**
-✅ **Gotowe do produkcji**
+✅ **Compiles without errors**
+✅ **Runs without interruptions**
+✅ **AI learns in the background**
+✅ **Vegetation looks natural**
+✅ **Production ready**
 
 ---
 
