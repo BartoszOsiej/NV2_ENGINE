@@ -32,12 +32,24 @@ impl DecorationAI {
                 let (_block, conf) = ai.predict_vegetation(&features);
                 if conf < 0.4 { continue; }
                 
+                // NV2.0 MeMLP: the modular biome head picks the decoration
+                // style from the climate features (0..9, BiomeId order).
+                let biome_idx = ai.predict_biome(&features);
+                let deco = match biome_idx {
+                    5 | 6 => DecorationType::Fern,    // Swamp / Taiga
+                    4 | 3 => DecorationType::Flower,  // DarkForest / Forest
+                    7 => DecorationType::Bush,        // Desert — sparse
+                    _ => {
+                        if sample.humidity > 0.6 {
+                            DecorationType::Fern
+                        } else {
+                            DecorationType::Bush
+                        }
+                    }
+                };
+                
                 let y = (sample.surface + 1) as f32;
-                if sample.humidity > 0.6 {
-                    deco_mgr.add(lx, y, lz, DecorationType::Fern);
-                } else {
-                    deco_mgr.add(lx, y, lz, DecorationType::Bush);
-                }
+                deco_mgr.add(lx, y, lz, deco);
             }
         }
     }

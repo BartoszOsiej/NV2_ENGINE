@@ -870,6 +870,12 @@ impl InteractionController {
             false
         };
 
+        // NV2.0: learn from the player — removing vegetation the AI would
+        // otherwise place teaches it a negative example for that spot.
+        if did_break {
+            crate::world::ai_feedback::record_break(world, hit.block_pos, hit.block_type);
+        }
+
         if did_break && hit.block_type == BlockType::NVCrafter {
             self.collect_world_drops_at(world, hit.block_pos);
         }
@@ -959,6 +965,7 @@ impl InteractionController {
         }
 
         if world.place_block(place_pos, block) {
+            crate::world::ai_feedback::record_place(world, place_pos, block);
             let _ = self.inventory.consume_active_item(1);
         }
     }

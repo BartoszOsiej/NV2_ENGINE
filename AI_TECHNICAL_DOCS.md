@@ -1,5 +1,12 @@
 # 🤖 NV_ENGINE AI System - Technical Documentation
 
+> **2026 update:** the AI now runs on **MeMLP — Modular embedded Multi-layer
+> Perceptron Model** (`Core/Src/world/memplp.rs`). The vegetation network was
+> deepened (8→24→16→4) and two modular heads were added: a biome classifier
+> (8→12→9) and a texture-style selector (8→12→6). Old single-hidden-layer
+> checkpoints are migrated automatically. See `TEST_REPORT.md` for the
+> benchmark results.
+
 ## Architecture Overview
 
 ```
@@ -40,6 +47,28 @@
 
 ## Module Structure
 
+### `world/memplp.rs` — the MeMLP core
+
+Generic multi-layer perceptron + the modular model container:
+
+```rust
+// Generic feed-forward network — any depth, ReLU hidden, softmax output.
+pub struct Mlp {
+    version: u32,
+    arch: Vec<usize>,           // e.g. [8, 24, 16, 4]
+    weights: Vec<Array2<f32>>,  // weights[k] is (arch[k], arch[k+1])
+    biases: Vec<Array1<f32>>,   // biases[k] is arch[k+1]
+}
+
+// Modular container — one JSON checkpoint, several specialist heads.
+pub struct MeMLP {
+    pub version: u32,
+    pub vegetation: Mlp,   // 8 → 24 → 16 → 4
+    pub biome: Mlp,        // 8 → 12 → 9
+    pub texture: Mlp,      // 8 → 12 → 6
+}
+```
+
 ### `world/ai_generator.rs`
 
 #### Public Types:
@@ -48,53 +77,64 @@ pub enum AIMessage {
     TrainingProgress { epoch: u32, loss: f32 },
     TextureGenerated { seed: u64, texture_data: Vec<u8> },
     VegetationDecision { wx: i32, wy: i32, wz: i32, block: BlockType, confidence: f32 },
+    PlayerFeedback { samples: usize, loss: f32 },
+    OnlineDataset { source: String, samples: usize },
+    CheckpointSaved { path: String },
 }
 
-pub struct TerrainAI {
-    w1: Array2<f32>,  // [8 x 16] Input → Hidden weights
-    b1: Array1<f32>,  // [16] Hidden biases
-    w2: Array2<f32>,  // [16 x 4] Hidden → Output weights
-    b2: Array1<f32>,  // [4] Output biases
-    learning_rate: f32,
+pub struct TerrainAI {           // wraps the MeMLP, keeps the engine API stable
+    model: MeMLP,
+    rng_state: u64,
+    learning_rate: f32,          // 0.01
     training_samples: usize,
 }
 
 pub struct AISystem {
     ai: Arc<Mutex<TerrainAI>>,
     tx: Sender<AIMessage>,
+    feedback: Arc<Mutex<Vec<TrainingSample>>>,  // player-action buffer (bounded 4096)
     training_thread: JoinHandle<()>,
 }
 ```
 
 #### Key Methods:
 
-##### Forward Pass
+##### Forward Pass (vegetation head)
 ```rust
 pub fn forward(&self, features: &[f32; 8]) -> [f32; 4]
 ```
 - Takes 8 terrain features
-- Applies ReLU activation to hidden layer
+- Runs the deep 8→24→16→4 vegetation head (ReLU hidden layers)
 - Returns 4 softmax probabilities
-- **Time complexity**: O(8×16 + 16×4) = O(192) operations
-- **Time**: ~10 microseconds
+- **Time**: ~0.3 µs (release build)
 
 ##### Backward Pass (Training)
 ```rust
 pub fn backward(&mut self, features: &[f32; 8], target: [f32; 4]) -> f32
 ```
 - Computes cross-entropy loss
-- Full backpropagation
-- Updates w1, b1, w2, b2
+- Full backpropagation through both hidden layers (vegetation head)
 - Returns loss value for monitoring
+- ~500 k samples/s (release build)
+
+##### Modular heads
+```rust
+pub fn predict_biome(&self, features: &[f32; 8]) -> usize      // 0..9, BiomeId order
+pub fn predict_texture_style(&self, features: &[f32; 8]) -> usize  // 0..5
+```
 
 ##### Prediction
 ```rust
 pub fn predict_vegetation(&self, features: &[f32; 8]) -> (BlockType, f32)
 ```
-- Locks AI model
-- Calls forward pass
+- Locks the model, runs the vegetation head
 - Returns highest-probability vegetation + confidence
 - Thread-safe (uses Arc<Mutex<>>)
+
+##### Checkpoints
+- `TerrainAI::load_checkpoint(path)` — loads **current or legacy** format;
+  legacy files (flat `w1/b1/w2/b2`) are migrated to MeMLP automatically.
+- `TerrainAI::save_checkpoint(path)` — writes the full modular model.
 
 ## Integration Points
 

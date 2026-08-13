@@ -24,7 +24,7 @@ rayon      = "1"
 num_cpus   = "1"
 fontdue    = "0.7"
 # ── AI/ML Dependencies ───────────────────────────────────────────────────
-ndarray    = "0.15"
+ndarray    = { version = "0.15", features = ["serde"] }
 rand       = "0.8"
 reqwest    = { version = "0.11", features = ["json"] }
 tokio      = { version = "1", features = ["full"] }

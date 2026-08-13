@@ -263,13 +263,28 @@ impl AtlasTexture {
             }
 
             if !loaded {
-                eprintln!("⚠️  Missing texture: {}", name);
+                // NV2.0: procedural fallback instead of the magenta placeholder.
+                // Deterministic CPU generation — the same tile on every machine,
+                // even when Assets/Blocks/ is missing a file.
+                let (palette, pattern) =
+                    crate::world::ai_generator::texture_style_for_name(name);
+                let tile = crate::world::ai_generator::generate_tile_texture(
+                    palette,
+                    pattern,
+                    crate::world::ai_generator::name_seed(name),
+                );
                 for ty in 0u32..16 {
                     for tx in 0u32..16 {
-                        let c = if (tx / 2 + ty / 2) % 2 == 0 { 255u8 } else { 80 };
-                        atlas.put_pixel(col * 16 + tx, row * 16 + ty, image::Rgba([c, 0, c, 255]));
+                        let idx = ((ty * 16 + tx) * 4) as usize;
+                        atlas.put_pixel(
+                            col * 16 + tx,
+                            row * 16 + ty,
+                            image::Rgba([tile[idx], tile[idx + 1], tile[idx + 2], tile[idx + 3]]),
+                        );
                     }
                 }
+                placed += 1;
+                eprintln!("🪄  Generated procedural texture for: {}", name);
             }
         }
 
