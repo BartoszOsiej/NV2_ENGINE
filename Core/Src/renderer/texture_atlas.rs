@@ -10,51 +10,13 @@ pub struct AtlasTexture {
 
 impl AtlasTexture {
     pub async fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Self> {
-        let atlas_paths = [
-            Path::new("Assets/Atlas/atlas.png"),
-            Path::new("Assets/Atlas/terrain.png"),
-            Path::new("../Assets/Atlas/atlas.png"),
-            Path::new("../Assets/Atlas/terrain.png"),
-            Path::new("../../Assets/Atlas/atlas.png"),
-            Path::new("../../Assets/Atlas/terrain.png"),
-            Path::new("../../../Assets/Atlas/atlas.png"),
-            Path::new("../../../Assets/Atlas/terrain.png"),
-        ];
-
-        // Build atlas image from file, composed tiles, or fallback solid colour.
+        // Build atlas image from composed tiles (fully procedural).
         let mut atlas_img: RgbaImage = 'load: {
             // Prefer composing from per-block textures. This guarantees every slot
             // is resampled to an exact 16x16 tile with nearest filtering and avoids
-            // stretching an arbitrary external atlas into the engine's fixed layout.
-            if let Some(composed) = Self::compose_from_blocks() {
-                break 'load composed;
-            }
-
-            for atlas_path in atlas_paths {
-                if let Ok(img) = image::open(atlas_path) {
-                    let rgba = img.to_rgba8();
-                    let (w, h) = img.dimensions();
-                    if w == 512 && h == 320 {
-                        break 'load rgba;
-                    } else {
-                        eprintln!(
-                            "Ignoring atlas {} with size {}x{}; expected exact 512x320 for a 32x20 grid of 16x16 tiles",
-                            atlas_path.display(),
-                            w,
-                            h
-                        );
-                    }
-                }
-            }
-            // Last-resort fallback: solid white checkerboard
-            let mut fb = RgbaImage::new(512, 320);
-            for y in 0..320u32 {
-                for x in 0..512u32 {
-                    let v = if (x / 16 + y / 16) % 2 == 0 { 255 } else { 200 };
-                    fb.put_pixel(x, y, image::Rgba([v, v, v, 255]));
-                }
-            }
-            fb
+            // stretching an external atlas into the engine's fixed layout. Fully
+            // procedural — always succeeds, even with no asset files present.
+            break 'load Self::compose_from_blocks();
         };
 
         // Overwrite water tile slots with procedurally-generated textures so that
@@ -225,7 +187,12 @@ impl AtlasTexture {
     /// Builds the atlas image by loading each texture listed in `ATLAS_TILES`.
     /// Each PNG is rescaled to exactly 16×16 and placed at its designated (col, row) slot.
     /// Missing files get a magenta checkerboard placeholder.
-    fn compose_from_blocks() -> Option<RgbaImage> {
+    ///
+    /// NV2.0: never returns `None`. Even when the whole `Assets/Blocks/`
+    /// directory is absent (clean install), every slot is filled by the
+    /// deterministic procedural generator — so a shipped game always has
+    /// textures instead of falling back to the white checkerboard.
+    fn compose_from_blocks() -> RgbaImage {
         let possible_roots = [
             Path::new("Assets/Blocks").to_path_buf(),
             Path::new("../Assets/Blocks").to_path_buf(),
@@ -234,38 +201,40 @@ impl AtlasTexture {
             Path::new("../../../../Assets/Blocks").to_path_buf(),
         ];
 
-        let blocks_root = possible_roots.into_iter().find(|p| p.exists())?;
+        let blocks_root = possible_roots.into_iter().find(|p| p.exists());
         let mut atlas   = RgbaImage::new(512, 320);
         let mut placed  = 0usize;
 
         for &(col, row, name) in ATLAS_TILES {
             // Try the base name and common variant suffixes in order.
-            let candidates = [
-                blocks_root.join(format!("{}.png", name)),
-                blocks_root.join(format!("{}_1.png", name)),
-                blocks_root.join(format!("{}_2.png", name)),
-                blocks_root.join(format!("{}_top.png", name)),
-            ];
-
             let mut loaded = false;
-            for path in &candidates {
-                if let Ok(img) = image::open(path) {
-                    let tile = img.resize_exact(16, 16, image::imageops::FilterType::Nearest).to_rgba8();
-                    for ty in 0u32..16 {
-                        for tx in 0u32..16 {
-                            atlas.put_pixel(col * 16 + tx, row * 16 + ty, *tile.get_pixel(tx, ty));
+            if let Some(root) = &blocks_root {
+                let candidates = [
+                    root.join(format!("{}.png", name)),
+                    root.join(format!("{}_1.png", name)),
+                    root.join(format!("{}_2.png", name)),
+                    root.join(format!("{}_top.png", name)),
+                ];
+
+                for path in &candidates {
+                    if let Ok(img) = image::open(path) {
+                        let tile = img.resize_exact(16, 16, image::imageops::FilterType::Nearest).to_rgba8();
+                        for ty in 0u32..16 {
+                            for tx in 0u32..16 {
+                                atlas.put_pixel(col * 16 + tx, row * 16 + ty, *tile.get_pixel(tx, ty));
+                            }
                         }
+                        loaded  = true;
+                        placed += 1;
+                        break;
                     }
-                    loaded  = true;
-                    placed += 1;
-                    break;
                 }
             }
 
             if !loaded {
                 // NV2.0: procedural fallback instead of the magenta placeholder.
                 // Deterministic CPU generation — the same tile on every machine,
-                // even when Assets/Blocks/ is missing a file.
+                // even when Assets/Blocks/ is missing a file (or the whole dir).
                 let (palette, pattern) =
                     crate::world::ai_generator::texture_style_for_name(name);
                 let tile = crate::world::ai_generator::generate_tile_texture(
@@ -289,7 +258,7 @@ impl AtlasTexture {
         }
 
         eprintln!("✓ Atlas built: {}/{} textures loaded", placed, ATLAS_TILES.len());
-        Some(atlas)
+        atlas
     }
 }
 
@@ -553,11 +522,12 @@ mod tests {
     /// and every tile slot filled with opaque-or-transparent content.
     #[test]
     fn compose_from_blocks_is_fully_procedural_after_asset_removal() {
-        // The test runner's CWD is Core/; the blocks dir may not even exist —
-        // compose_from_blocks returns None then, so exercise the tile
-        // generator directly: every slot must yield a valid 16x16 RGBA tile.
-        let (w, h) = (512u32, 320u32);
-        let mut atlas = RgbaImage::new(w, h);
+        // compose_from_blocks() must never return None: it always fills every
+        // slot with a valid procedural 16x16 RGBA tile, even when the
+        // Assets/Blocks/ directory does not exist (clean install).
+        let mut atlas = AtlasTexture::compose_from_blocks();
+        assert_eq!(atlas.dimensions(), (512, 320));
+
         let mut placed = 0usize;
         for &(col, row, name) in ATLAS_TILES {
             let (palette, pattern) = crate::world::ai_generator::texture_style_for_name(name);
@@ -580,7 +550,7 @@ mod tests {
             placed += 1;
         }
         assert_eq!(placed, ATLAS_TILES.len(), "every slot must be generated");
-        assert_eq!(atlas.dimensions(), (w, h));
+        assert_eq!(atlas.dimensions(), (512u32, 320u32));
 
         // Determinism: the same name always yields the same tile bytes.
         let (p, pat) = crate::world::ai_generator::texture_style_for_name("stone");

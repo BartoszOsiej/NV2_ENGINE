@@ -114,6 +114,10 @@ impl App {
             let amount = arg("/eat").unwrap_or(15.0);
             return Some(self.session.eat(amount));
         }
+        if cmd.starts_with("/drink") {
+            let amount = arg("/drink").unwrap_or(20.0);
+            return Some(self.session.drink(amount));
+        }
         if cmd.starts_with("/heal") {
             let amount = arg("/heal").unwrap_or(10.0);
             return Some(self.session.heal_player(amount));

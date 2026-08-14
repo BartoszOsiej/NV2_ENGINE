@@ -382,6 +382,41 @@ impl RecipeRegistry {
             output: stack_of(BlockType::FlintPickaxe, 1),
         });
 
+        // NV2.0 gameplay expansion — renewable building blocks.
+        // Dirt + Gravel → coarse soil (renewable CoarseSoil).
+        recipes.register_shapeless(ShapelessRecipe {
+            ingredients: vec![BlockType::Dirt, BlockType::Gravel],
+            output: stack_of(BlockType::CoarseSoil, 2),
+        });
+        // 2×2 Cobblestone → StoneBricks (dressed stone).
+        register_shaped(
+            &mut recipes,
+            2,
+            2,
+            vec![
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Cobblestone),
+            ],
+            BlockType::StoneBricks,
+            4,
+        );
+        // 2×2 Mud → PackedMud (compact, stabilised building block).
+        register_shaped(
+            &mut recipes,
+            2,
+            2,
+            vec![
+                Some(BlockType::Mud),
+                Some(BlockType::Mud),
+                Some(BlockType::Mud),
+                Some(BlockType::Mud),
+            ],
+            BlockType::PackedMud,
+            4,
+        );
+
         register_shaped(
             &mut recipes,
             3,
