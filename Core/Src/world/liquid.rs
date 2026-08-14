@@ -62,7 +62,7 @@ pub fn encode_level(level: u8) -> u8 {
 ///   3. For each non-source flow block, compute the *highest level reachable
 ///      from any horizontal/vertical neighbour* and either raise, keep, or remove
 ///      the block accordingly. This ensures flows decay when sources disappear.
-pub fn simulate_step(world: &mut World) {
+pub fn simulate_step(world: &mut World) -> bool {
     let chunk_keys: Vec<(i32, i32)> = world.chunks.keys().cloned().collect();
     let scan_top = CHUNK_H.min(SEA_LEVEL as usize + 65);
 
@@ -234,15 +234,26 @@ pub fn simulate_step(world: &mut World) {
     }
 
     // ── Phase 4: apply all changes ────────────────────────────────────────────
+    // Returns whether anything actually changed, so the renderer can skip the
+    // full water-mesh rebuild when the water has settled (static bodies of
+    // water would otherwise trigger a full rebuild every interval forever).
+    let mut changed = false;
     for (wx, wy, wz, level) in changes {
         if level == 0 {
-            world.set_block(wx, wy, wz, BlockType::Air);
-            world.set_water_meta(wx, wy, wz, 0);
-        } else {
+            if world.get_block(wx, wy, wz) != BlockType::Air {
+                world.set_block(wx, wy, wz, BlockType::Air);
+                world.set_water_meta(wx, wy, wz, 0);
+                changed = true;
+            }
+        } else if world.get_block(wx, wy, wz) != BlockType::Water
+            || world.get_water_meta(wx, wy, wz) != encode_level(level)
+        {
             world.set_block(wx, wy, wz, BlockType::Water);
             world.set_water_meta(wx, wy, wz, encode_level(level));
+            changed = true;
         }
     }
+    changed
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

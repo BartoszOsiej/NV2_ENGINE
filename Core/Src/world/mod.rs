@@ -737,8 +737,8 @@ impl World {
 
     /// Liquid simulation tick — delegates to the dedicated liquid module.
     /// Called at a throttled rate (~0.5 s) by the renderer update loop.
-    pub fn simulate_water(&mut self) {
-        liquid::simulate_step(self);
+    pub fn simulate_water(&mut self) -> bool {
+        liquid::simulate_step(self)
     }
 
     /// Get per-voxel water metadata (0 if none)

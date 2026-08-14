@@ -1284,8 +1284,11 @@ impl State {
         self.water_sim_timer += dt;
         if self.water_sim_timer >= performance_profile.water_sim_interval {
             self.water_sim_timer = 0.0;
-            world.simulate_water();
-            self.water_sim_dirty = true;
+            // Only request a mesh rebuild when the sim actually moved water;
+            // settled bodies of water no longer trigger full rebuilds every 1.5 s.
+            if world.simulate_water() {
+                self.water_sim_dirty = true;
+            }
         }
 
         // Process any chunks that finished generating in background threads

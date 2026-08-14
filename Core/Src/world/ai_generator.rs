@@ -1327,19 +1327,23 @@ impl AISystem {
                     head_count += 2;
                 }
             }
-            if head_count > 0 {
-                let avg = head_loss / head_count as f32;
-                let stats = ai.lock().map(|m| (m.model_param_count(), m.model_version())).unwrap_or((0, 0));
-                println!(
-                    "[AI-MEMLP] Epoch {} | heads: biome+texture | loss={:.4} | params={} | version={}",
-                    epoch, avg, stats.0, stats.1
-                );
+            let avg_loss = if trained > 0 { total_loss / trained as f32 } else { 0.0 };
+
+            // Throttle diagnostics + progress messages: the receiver is never
+            // drained, so an unbounded stream would grow forever, and console
+            // output every epoch stalls the game on slow terminals.
+            if epoch % 20 == 0 {
+                if head_count > 0 {
+                    let avg = head_loss / head_count as f32;
+                    let stats = ai.lock().map(|m| (m.model_param_count(), m.model_version())).unwrap_or((0, 0));
+                    println!(
+                        "[AI-MEMLP] Epoch {} | heads: biome+texture | loss={:.4} | params={} | version={}",
+                        epoch, avg, stats.0, stats.1
+                    );
+                }
+                let _ = tx.send(AIMessage::TrainingProgress { epoch, loss: avg_loss });
             }
 
-            let avg_loss = if trained > 0 { total_loss / trained as f32 } else { 0.0 };
-            let _ = tx.send(AIMessage::TrainingProgress { epoch, loss: avg_loss });
-
-            // 4) Checkpoint every 20 epochs.
             if epoch % 20 == 0 {
                 if let Ok(model) = ai.lock() {
                     if let Err(e) = model.save_checkpoint(checkpoint_path) {
@@ -1348,14 +1352,12 @@ impl AISystem {
                         println!("[AI] checkpoint saved ({})", model.training_samples());
                     }
                 }
+                println!("[AI-EPOCH] {} completed | Avg Loss: {:.4} | samples: {}", epoch, avg_loss, trained);
             }
 
-            println!("[AI-EPOCH] {} completed | Avg Loss: {:.4} | samples: {}", epoch, avg_loss, trained);
-
-            // Cooldown per 5 epochs
-            if epoch % 5 == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
+            // Cooldown every epoch: caps the loop at ~40 epochs/s so background
+            // training never starves the render loop on low-core-count machines.
+            std::thread::sleep(std::time::Duration::from_millis(25));
         }
     }
 

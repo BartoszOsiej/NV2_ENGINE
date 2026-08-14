@@ -45,6 +45,8 @@ struct App {
     pause_menu_selection: usize,
     settings:     settings::SharedSettings,
     last_frame:   Instant,
+    fps_accum:    f32,
+    fps_frames:   u32,
     /// NV2.0 gameplay session — clock, survival stats, hostiles, achievements.
     session:      gameplay::GameSession,
 }
@@ -338,6 +340,8 @@ impl App {
             pause_menu_selection: 0,
             settings,
             last_frame:     Instant::now(),
+            fps_accum:      0.0,
+            fps_frames:     0,
             session:        gameplay::GameSession::new(),
         }
     }
@@ -715,8 +719,17 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
-                let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
+                let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.05);
                 self.last_frame = now;
+                if std::env::var("NV2_FPS_LOG").is_ok() {
+                    self.fps_accum += dt;
+                    self.fps_frames += 1;
+                    if self.fps_accum >= 0.5 {
+                        println!("[FPS] {:.1} fps", self.fps_frames as f32 / self.fps_accum);
+                        self.fps_accum = 0.0;
+                        self.fps_frames = 0;
+                    }
+                }
                 let low_end_enabled = self.low_end_mode_enabled();
 
                 // NV2.0 gameplay messages are deferred until the state
