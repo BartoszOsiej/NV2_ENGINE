@@ -1,8 +1,0 @@
-{
-    "parent": "block/template_fence_side",
-    "textures": {
-	    "particle": "block/jungle_planks",
-        "side": "block/fence_jungle_side",
-        "top":  "block/fence_jungle_top"
-    }
-}

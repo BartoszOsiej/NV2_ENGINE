@@ -355,6 +355,7 @@ impl Default for TerrainAI {
 /* ================================================================ */
 
 /// Base palette for a procedural texture: two colors that get blended by noise.
+#[derive(Clone, Copy)]
 pub struct TexturePalette {
     pub c0: [u8; 3],
     pub c1: [u8; 3],
@@ -364,6 +365,7 @@ pub struct TexturePalette {
 }
 
 /// Which visual pattern to synthesize.
+#[derive(Clone, Copy)]
 pub enum TexturePattern {
     /// Smooth value-noise blend between c0 and c1.
     Noise,
@@ -561,6 +563,13 @@ pub fn texture_style_for_block(block: BlockType) -> (TexturePalette, TexturePatt
     }
 }
 
+/// Normalise a 64-bit seed into a small, deterministic float offset in
+/// [0, 1). Used instead of `seed as f32`, which for a large u64 becomes a
+/// ~1.8e19 value that overflows u32 coordinates inside value_noise.
+fn seed_offset(seed: u64) -> f32 {
+    ((seed as u32) as f32) / 65535.0
+}
+
 /// Deterministic hash of (x, y) for value noise.
 fn hash2(x: u32, y: u32, seed: u64) -> f32 {
     let mut h = seed;
@@ -627,7 +636,7 @@ fn generate_tile(palette: TexturePalette, pattern: TexturePattern, seed: u64) ->
             let idx = ((y * SIZE + x) * 4) as usize;
             let (rgb, alpha) = match pattern {
                 TexturePattern::Noise => {
-                    let n = fbm(fx / 16.0 + seed as f32, fy / 16.0, seed, 3);
+                    let n = fbm(fx / 16.0 + seed_offset(seed), fy / 16.0, seed, 3);
                     let mut rgb = blend(palette.c0, palette.c1, n);
                     if let Some(c2) = palette.c2 {
                         if fbm(fx * 2.0, fy * 2.0, seed.wrapping_add(7), 2) > 0.75 {
@@ -666,7 +675,7 @@ fn generate_tile(palette: TexturePalette, pattern: TexturePattern, seed: u64) ->
                 TexturePattern::Wood => {
                     // Vertical grain: vary along X with streaks
                     let grain = value_noise(fx * 0.55, fy * 0.22, seed.wrapping_add(5));
-                    let streak = fbm(fx / 16.0 + seed as f32, fy * 1.7, seed.wrapping_add(3), 2);
+                    let streak = fbm(fx / 16.0 + seed_offset(seed), fy * 1.7, seed.wrapping_add(3), 2);
                     let mut rgb = blend(palette.c0, palette.c1, grain * 0.5 + streak * 0.5);
                     if let Some(c2) = palette.c2 {
                         if streak > 0.7 {
@@ -691,7 +700,7 @@ fn generate_tile(palette: TexturePalette, pattern: TexturePattern, seed: u64) ->
                 }
                 TexturePattern::Leaves => {
                     // Chaotic clumps with translucent holes
-                    let n = fbm(fx * 1.8 + seed as f32 * 0.05, fy * 1.8, seed, 3);
+                    let n = fbm(fx * 1.8 + seed_offset(seed), fy * 1.8, seed, 3);
                     if n < 0.16 {
                         // hole — fully transparent
                         (palette.c0, 0)

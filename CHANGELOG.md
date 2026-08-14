@@ -417,3 +417,32 @@ if idx == 4 { BlockType::CustomFlower }  // Add to match statement
 
 **Last Updated**: 2024-01-15
 **Version**: 1.0.0
+
+## NV2.0 — Release-state sweep (2026-08-14)
+
+### Gameplay mechanics (new: `Core/Src/gameplay.rs`)
+- **Day/night cycle** — `GameClock` (10-min day, 24 h wall clock, night
+  phase, darkness 0..1); HUD clock + sky darkening at night.
+- **Health & hunger** — `PlayerStats`: hunger decay, health regen above 60%,
+  starvation damage, death → respawn at dawn at the spawn point.
+- **Hostiles** — `EnemyManager`: spawn at night (capped), chase the player,
+  attack in range; `/attack` damages the nearest hostile; kills counted.
+- **Tool durability** — `ToolWear`: wear on use, break at `max_wear`,
+  `/repair`; `/tools` lists remaining uses.
+- **Progression** — `AchievementTracker`: first-night, five-nights,
+  first-kill, hunter, full-health, master-crafter; `/achievements`.
+- **HUD** — one-line status (clock, health, hunger, hostiles) drawn by the
+  renderer; `/time`, `/day`, `/night`, `/eat`, `/heal`, `/attack`, `/tools`,
+  `/repair`, `/achievements`, `/stats` commands.
+
+### Asset audit (Mojang removal)
+- ~3 700 Mojang/Minecraft asset files deleted; atlas is now 100%
+  procedural (existing `ai_generator` fallback) — see `ASSET_AUDIT.md`.
+- Fixed `u32` overflow in procedural tile generation (found by the new
+  atlas test); `TexturePalette`/`TexturePattern` now `Clone, Copy`;
+  `BlockType` now derives `Hash`.
+
+### Tests
+- Suite: **115 passed · 0 failed · 1 ignored** (was 99). +17 tests
+  (16 gameplay + 1 procedural-atlas), including a bug-finding test for the
+  procedural fallback.

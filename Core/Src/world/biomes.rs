@@ -361,6 +361,8 @@ pub struct BiomeGenerator {
     water_seed: i64,
     settings: SharedSettings,
     vegetation: VegetationGenerator,
+    /// Real (NASA POWER) or synthetic climate baseline for this world.
+    meteo: super::meteo::MeteoData,
 }
 
 impl BiomeGenerator {
@@ -370,6 +372,7 @@ impl BiomeGenerator {
 
     pub fn new_with_settings(seed: u32, settings: SharedSettings) -> Self {
         let base = seed as i64;
+        let meteo = super::meteo::meteo_for_seed(seed);
         Self {
             seed,
             continent_seed: base.wrapping_add(1_111),
@@ -386,7 +389,13 @@ impl BiomeGenerator {
             water_seed: base.wrapping_add(12_121),
             settings,
             vegetation: VegetationGenerator::new(),
+            meteo,
         }
+    }
+
+    /// The real-world climate baseline (NASA POWER or synthetic fallback).
+    pub fn meteo(&self) -> super::meteo::MeteoData {
+        self.meteo
     }
 
     pub fn seed(&self) -> u32 {
@@ -510,6 +519,17 @@ impl BiomeGenerator {
             sample_z * 0.00195 + 22.0,
         ) + 1.0) * 0.5)
             .clamp(0.0, 1.0);
+        // NV-2.0: the real NASA POWER climate *shifts* the noise
+        // distribution instead of replacing it — local variety (forests,
+        // deserts, taiga…) survives while the whole region is genuinely
+        // warmer/wetter/colder/drier than neutral at its Earth location.
+        // A neutral (synthetic) climate shifts by 0, so offline worlds and
+        // the test suite keep the classic distribution exactly.
+        let m = &self.meteo;
+        let temperature =
+            (temperature + (m.warmth() - 0.5) as f64 * 0.6).clamp(0.0, 1.0);
+        let humidity =
+            (humidity + (m.moisture() - 0.5) as f64 * 0.6).clamp(0.0, 1.0);
         let erosion = ((fbm4(self.erosion_seed, sample_x * 0.0028, sample_z * 0.0028) + 1.0) * 0.5)
             .clamp(0.0, 1.0);
         let ridges = ridge(fbm4(self.peak_seed, sample_x * 0.0048, sample_z * 0.0048)).clamp(0.0, 1.0);

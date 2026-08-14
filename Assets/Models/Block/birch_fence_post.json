@@ -1,8 +1,0 @@
-{
-    "parent": "block/template_fence_post",
-    "textures": {
-	    "particle": "block/birch_planks",
-        "side": "block/fence_birch_side",
-        "top":  "block/fence_birch_top"			
-    }
-}
