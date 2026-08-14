@@ -1,0 +1,131 @@
+# ============================================================
+# Externum :: NV2.0 :: protected build
+#   app_id : nv2-engine
+#   author : NV-2.0
+#   build  : 1786699391
+#   source : sha256:f6138a49f92260f9edd8460bd86dfe8a00e499a4b96b723e462ac02cc239de8a
+#   This file is watermarked and integrity-checked. Do not edit.
+# ============================================================
+def _ext_s(_b64):
+    import base64
+    return base64.b64decode(_b64).decode("utf-8")
+EXPECTED_BINARY_SHA = _ext_s("OGE3MWIwMWYxNjBmZGUyYjg5NWZhMDI4NmViN2RhMTBiNTcwNDE2NmQ1Y2I1MzFiZTliY2MxNDcwNzIxNzBhMg==")
+EXPECTED_LICENSE_SHA = _ext_s("MjRkOTJiNWZhMTBmODViZDExODJkZGQ4NTU0YWViNjQ0M2VhMWIyZTY4YmMzZTFlZDBmM2ZhMWM0NmNhZGVlOA==")
+APP_ID = _ext_s("bnYyLWVuZ2luZQ==")
+AUTHOR = _ext_s("TlYtMi4w")
+GAME_BINARY = _ext_s("Li9udjJfZW5naW5l")
+WATERMARK = _ext_s("RXh0ZXJudW06OkRSTTo6bnYyLWVuZ2luZTo6TlYtMi4w")
+def file_exists(path):
+    import os
+    return os.path.isfile(path)
+def sha256_file(path):
+    import hashlib
+    fh = open(path, _ext_s("cmI="))
+    blob = fh.read()
+    fh.close()
+    return hashlib.sha256(blob).hexdigest()
+def sha256_str(s):
+    import hashlib
+    return hashlib.sha256(s.encode()).hexdigest()
+def parse_key(args):
+    i = 0
+    while i < len(args):
+        if args[i] == _ext_s("LS1rZXk=") and i + 1 < len(args):
+            return args[i + 1]
+        i = i + 1
+    return _ext_s("")
+def collect_game_args(args):
+    result = []
+    i = 0
+    while i < len(args):
+        if args[i] == _ext_s("LS1rZXk="):
+            i = i + 2
+        else:
+            result.append(args[i])
+            i = i + 1
+    return result
+def run_game(args):
+    import subprocess
+    proc = subprocess.run([GAME_BINARY] + args)
+    return proc.returncode
+def main():
+    import sys
+    args = list(sys.argv[1:])
+    key = parse_key(args)
+    if key == _ext_s(""):
+        print(_ext_s("TlYtMi4wOiBsaWNlbnNlIGtleSByZXF1aXJlZCDigJQgcGFzcyAtLWtleSA8a2V5Pg=="))
+        sys.exit(2)
+    if sha256_str(key) != EXPECTED_LICENSE_SHA:
+        print(_ext_s("TlYtMi4wOiBpbnZhbGlkIGxpY2Vuc2Uga2V5"))
+        sys.exit(3)
+    if not file_exists(GAME_BINARY):
+        print(_ext_s("TlYtMi4wOiBnYW1lIGJpbmFyeSBtaXNzaW5nIOKAlCByZWluc3RhbGwgb3IgdXBkYXRl"))
+        sys.exit(4)
+    if sha256_file(GAME_BINARY) != EXPECTED_BINARY_SHA:
+        print(_ext_s("TlYtMi4wOiBnYW1lIGJpbmFyeSBtb2RpZmllZCDigJQgcmVpbnN0YWxsIG9yIHVwZGF0ZQ=="))
+        sys.exit(4)
+    print(WATERMARK)
+    sys.exit(run_game(collect_game_args(args)))
+main()
+# ---- Externum DRM runtime guard (embedded in every protected file) ----
+_EXT_DRM_APP = 'nv2-engine'
+_EXT_DRM_AUTHOR = 'NV-2.0'
+_EXT_DRM_SOURCE_SHA = 'f6138a49f92260f9edd8460bd86dfe8a00e499a4b96b723e462ac02cc239de8a'
+_EXT_DRM_EXPECTED = '1fff6a732be3da41dee1466faf5830b57b3fd4300a7d4894eec2aa5bc887d1df'
+_EXT_DRM_WATERMARK = 'Externum::DRM::' + _EXT_DRM_APP + '::' + _EXT_DRM_AUTHOR
+_EXT_DRM_ARTIFACT_SHA = '4b42a1b4710b1a84b3548667aea432ac02243d5cf4820b0ee4383b3caf876d26'
+
+def _ext_drm_self_check():
+    import hashlib, os, sys
+    def _h(b):
+        return hashlib.sha256(b).hexdigest()
+    # 1) license — env key must match the expected digest
+    key = os.environ.get('EXTERNUM_LICENSE', '')
+    if key:
+        if _h(key.encode()) != _EXT_DRM_EXPECTED:
+            raise RuntimeError('Externum DRM: invalid license key')
+    # 2) tamper detection — verify this file's own bytes against the
+    #    artifact hash embedded at build time
+    blob = None
+    try:
+        mod = sys.modules.get('__main__')
+        fname = getattr(mod, '__file__', None)
+        if fname and os.path.isfile(fname):
+            with open(fname, 'rb') as fh:
+                blob = fh.read()
+    except Exception:
+        blob = None
+    if blob is not None:
+        import re as _re
+        # anchor on the DRM header block (`# ====` + marker line). The CLI
+        # may wrap the artifact, and `externum run --protect` points
+        # __file__ at the .ext source (no header -> check skipped). The
+        # two-line sequence never occurs inside the guard itself, so it
+        # cannot self-match.
+        m = list(_re.finditer(rb'# ={10,}\n# Externum :: NV2.0 :: protected build', blob))
+        if m:
+            blob = blob[m[-1].start():]
+            call = blob.rfind(b'_ext_drm_self_check()')
+            if call < 0:
+                raise RuntimeError('Externum DRM: malformed artifact')
+            # only comments may follow the guard. `--target all` artifacts
+            # append commented bash/binary sections (all `#` lines); any
+            # real code after the guard is tampering
+            for ln in blob[call + len(b'_ext_drm_self_check()'):].splitlines():
+                if ln.strip() and not ln.strip().startswith(b'#'):
+                    raise RuntimeError('Externum DRM: file was tampered with')
+            blob = blob[:call + len(b'_ext_drm_self_check()') + 1]
+            # the embedded sha line is itself part of the file; splice it
+            # out (with its leading newline) before hashing — the build
+            # hashed the artifact without that line
+            needle = (b"_EXT_DRM_ARTIFACT_SHA = '" + _EXT_DRM_ARTIFACT_SHA.encode()
+                      + b"'")
+            pos = blob.find(needle)
+            if pos >= 0:
+                start = pos - 1 if pos > 0 else 0
+                blob = blob[:start] + blob[pos + len(needle):]
+            if _h(blob) != _EXT_DRM_ARTIFACT_SHA:
+                raise RuntimeError('Externum DRM: file was tampered with')
+    return _EXT_DRM_WATERMARK
+
+_ext_drm_self_check()

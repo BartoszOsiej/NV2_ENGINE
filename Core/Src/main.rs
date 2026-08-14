@@ -14,6 +14,7 @@ use winit::{
 
 mod commands;
 mod crafting;
+mod gameplay;
 mod interaction;
 mod inventory;
 mod renderer;
@@ -44,6 +45,8 @@ struct App {
     pause_menu_selection: usize,
     settings:     settings::SharedSettings,
     last_frame:   Instant,
+    /// NV2.0 gameplay session — clock, survival stats, hostiles, achievements.
+    session:      gameplay::GameSession,
 }
 
 impl App {
@@ -77,6 +80,81 @@ impl App {
         if let Some(state) = self.state.as_ref() {
             state.window.set_title(&self.title_text());
         }
+    }
+
+    /// NV2.0: handle `/time`, `/eat`, `/heal`, `/attack`, `/tools`,
+    /// `/repair`, `/achievements`, `/night` — returns the console message,
+    /// or None when the command is not a gameplay command.
+    fn execute_gameplay_command(&mut self, command: &str, player: (f32, f32, f32)) -> Option<String> {
+        let cmd = command.to_ascii_lowercase();
+        let arg = |prefix: &str| -> Option<f32> {
+            let rest = cmd.strip_prefix(prefix)?.trim();
+            rest.parse::<f32>().ok()
+        };
+
+        if cmd.starts_with("/time") {
+            let (h, m) = self.session.clock.hour_minute();
+            return Some(format!(
+                "Day {} — {:02}:{:02} ({})",
+                self.session.clock.day_count + 1,
+                h,
+                m,
+                if self.session.clock.is_night() { "night" } else { "day" },
+            ));
+        }
+        if cmd == "/day" || cmd == "/morning" {
+            self.session.clock.set_time_hours(6.0);
+            return Some("Good morning — it is now 06:00.".to_string());
+        }
+        if cmd == "/night" {
+            self.session.clock.set_time_hours(22.0);
+            return Some("Night falls — hostiles will be out.".to_string());
+        }
+        if cmd.starts_with("/eat") {
+            let amount = arg("/eat").unwrap_or(15.0);
+            return Some(self.session.eat(amount));
+        }
+        if cmd.starts_with("/heal") {
+            let amount = arg("/heal").unwrap_or(10.0);
+            return Some(self.session.heal_player(amount));
+        }
+        if cmd == "/attack" {
+            let message = self.session.attack_nearest((player.0, player.2));
+            self.session.wear.use_tool(crate::world::BlockType::StonePickaxe);
+            return Some(message);
+        }
+        if cmd == "/tools" {
+            let worn = self.session.wear.worn_tools();
+            if worn.is_empty() {
+                return Some("No tools worn — all in mint condition.".to_string());
+            }
+            let list = worn
+                .iter()
+                .map(|(t, r)| format!("{} ({r} uses left)", t.display_name()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Some(format!("Tool wear: {list}"));
+        }
+        if cmd == "/repair" {
+            self.session.wear.repair_all();
+            return Some("All tools repaired.".to_string());
+        }
+        if cmd == "/achievements" || cmd == "/ach" {
+            let unlocked = self.session.achievements.unlocked.clone();
+            if unlocked.is_empty() {
+                return Some("No achievements yet — survive a night, fight hostiles!".to_string());
+            }
+            return Some(format!("Achievements: {}", unlocked.join(", ")));
+        }
+        if cmd == "/stats" {
+            return Some(format!(
+                "Kills: {} | Nights survived: {} | Crafts: {}",
+                self.session.achievements.kills,
+                self.session.achievements.nights_survived,
+                self.session.achievements.crafts,
+            ));
+        }
+        None
     }
 
     fn set_status_message<S: Into<String>>(&mut self, message: S) {
@@ -143,6 +221,18 @@ impl App {
                 )
             })
             .unwrap_or((0.0, 80.0, 0.0));
+
+        // NV2.0 gameplay commands are handled by the session.
+        if let Some(message) = self.execute_gameplay_command(&command, player_origin) {
+            if let Some(state) = self.state.as_mut() {
+                state.input_captured = true;
+                state.window.set_cursor_visible(false);
+                let _ = state.window.set_cursor_grab(CursorGrabMode::Locked);
+                state.clear_command_prompt();
+            }
+            self.show_console_message(message);
+            return;
+        }
 
         let result = commands::execute(&mut self.world, player_origin, &command);
 
@@ -244,6 +334,7 @@ impl App {
             pause_menu_selection: 0,
             settings,
             last_frame:     Instant::now(),
+            session:        gameplay::GameSession::new(),
         }
     }
 
@@ -257,7 +348,19 @@ impl App {
             .wrapping_mul(1_013_904_223);
         self.world = world::World::new_with_settings(seed, self.settings.clone());
         self.mode = AppMode::Playing;
-        self.set_status_message("New game started. Press Esc for the pause menu.");
+        // NV-2.0: announce the world's real (NASA POWER) climate
+        let meteo = self.world.meteo();
+        let source = if world::meteo::is_real_meteo() {
+            "NASA POWER".to_string()
+        } else {
+            "synthetic (offline)".to_string()
+        };
+        self.set_status_message(format!(
+            "New game started. Climate: {} {:.0}°C | {} | Esc = pause",
+            meteo.weather_label(),
+            meteo.temperature_c,
+            source
+        ));
         self.update_window_title();
         let spawn = self.world.find_spawn_point();
         // If renderer is initialized, move the camera to the surface of the new world
@@ -612,9 +715,34 @@ impl ApplicationHandler for App {
                 self.last_frame = now;
                 let low_end_enabled = self.low_end_mode_enabled();
 
+                // NV2.0 gameplay messages are deferred until the state
+                // borrow ends (they call back into self.state).
+                let mut pending_messages: Vec<String> = Vec::new();
                 if let Some(state) = self.state.as_mut() {
                     if self.mode == AppMode::Playing {
                         state.update(&mut self.world, &mut self.input, dt);
+                        let player = (state.camera.position.x, state.camera.position.z);
+                        let feedback = self.session.update(dt, player);
+                        pending_messages.extend(feedback.messages);
+                        if feedback.died {
+                            pending_messages.push("You died!".to_string());
+                            pending_messages.push(self.session.respawn());
+                            let (sx, sy, sz) = self.world.find_spawn_point();
+                            state.camera.position = cgmath::Vector3::new(sx, sy, sz);
+                            state.camera.velocity = cgmath::Vector3::new(0.0, 0.0, 0.0);
+                            state.camera.on_ground = true;
+                        }
+                        state.hud_line = self.session.hud_line();
+                        state.ambient_darkness = self.session.clock.darkness();
+                        // NV-2.0: real NASA POWER climate in the HUD and sky.
+                        let meteo = self.world.meteo();
+                        state.hud_line = format!(
+                            "{} | {} {:.0}°C",
+                            self.session.hud_line(),
+                            meteo.weather_label(),
+                            meteo.temperature_c
+                        );
+                        state.cloud_cover = meteo.cloud_cover();
                     }
                     self.input.clear_frame();
 
@@ -631,6 +759,10 @@ impl ApplicationHandler for App {
                     }
 
                     state.window.request_redraw();
+                }
+
+                for message in &pending_messages {
+                    self.show_console_message(message);
                 }
             }
             _ => {}

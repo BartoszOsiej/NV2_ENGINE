@@ -194,6 +194,12 @@ pub struct State {
     crosshair_index_count: u32,
     subtitle_text: Option<String>,
     command_prompt_text: Option<String>,
+    /// NV2.0: one-line gameplay HUD (health, hunger, clock, hostiles).
+    pub hud_line: String,
+    /// NV2.0: 0..1 night darkness applied to the sky clear colour.
+    pub ambient_darkness: f32,
+    /// NV2.0: 0..1 cloud cover from the world's NASA POWER climate.
+    pub cloud_cover: f32,
     /// Monotonically increasing session time (seconds). Drives day/night + water anim.
     elapsed_time: f32,
 
@@ -921,6 +927,9 @@ impl State {
             crosshair_index_count,
             subtitle_text: None,
             command_prompt_text: None,
+            hud_line: String::new(),
+            ambient_darkness: 0.0,
+            cloud_cover: 0.0,
             elapsed_time: 0.0,
             text_renderer,
             menu_renderer: MenuRenderer::new(),
@@ -990,9 +999,23 @@ impl State {
         self.window.request_redraw();
     }
 
-    fn ui_clear_color(mode: UiMode, elapsed: f32) -> wgpu::Color {
+    fn ui_clear_color(mode: UiMode, elapsed: f32, ambient_darkness: f32,
+                      cloud_cover: f32) -> wgpu::Color {
         match mode {
-            UiMode::None      => Self::sky_color_for_time(elapsed),
+            UiMode::None => {
+                let mut c = Self::sky_color_for_time(elapsed);
+                // NV2.0: blend the gameplay night cycle into the sky.
+                let d = ambient_darkness.clamp(0.0, 1.0) as f64;
+                c.r *= 1.0 - d * 0.75;
+                c.g *= 1.0 - d * 0.75;
+                c.b *= 1.0 - d * 0.55;
+                // NV2.0: real climate cloud cover dims and greys the sky.
+                let clouds = cloud_cover.clamp(0.0, 1.0) as f64;
+                c.r *= 1.0 - clouds * 0.45;
+                c.g *= 1.0 - clouds * 0.45;
+                c.b *= 1.0 - clouds * 0.35;
+                c
+            }
             UiMode::MainMenu  => wgpu::Color { r: 0.06, g: 0.08, b: 0.12, a: 1.0 },
             UiMode::PauseMenu => wgpu::Color { r: 0.04, g: 0.05, b: 0.08, a: 1.0 },
         }
@@ -1506,7 +1529,8 @@ impl State {
     ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let clear_color = Self::ui_clear_color(mode, self.elapsed_time);
+        let clear_color =
+            Self::ui_clear_color(mode, self.elapsed_time, self.ambient_darkness, self.cloud_cover);
         let screen_size = (self.config.width, self.config.height);
         let gui_type = if mode == UiMode::None {
             self.interaction.gui_type()
@@ -1827,6 +1851,20 @@ impl State {
             UiMode::None => {
                 let layout = build_inventory_layout(screen_size, gui_type);
                 let visible_slots = layout.visible_slots(gui_type);
+
+                // NV2.0: gameplay HUD — clock, health, hunger, hostiles.
+                if !self.hud_line.is_empty() {
+                    let _ = self.text_renderer.draw_text_tinted(
+                        &self.device,
+                        &self.queue,
+                        12.0,
+                        8.0,
+                        0.60,
+                        &self.hud_line,
+                        TextAlignment::Left,
+                        [245, 245, 245, 255],
+                    );
+                }
 
                 if inventory_open {
                     if let Some((title_x, title_y)) = layout.title_position {

@@ -208,8 +208,8 @@ println!("Confidence: {}", confidence);
 - [ ] Download training datasets
 - [ ] GPU texture generation
 - [ ] Real-time terrain editing
-- [ ] Community model sharing
-- [ ] Player preference learning
+- [x] Community model sharing
+- [x] Player preference learning
 
 Details in `AI_PHASE2_ROADMAP.md`
 

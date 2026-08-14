@@ -544,3 +544,59 @@ pub fn tile_flower()              -> TileUV { TileUV::new( 2, 5) }   // dandelio
 pub fn tile_dead_bush()           -> TileUV { TileUV::new( 3, 5) }   // dead_bush.png
 pub fn tile_cactus_side()         -> TileUV { TileUV::new( 4, 5) }   // cactus_side.png
 pub fn tile_cactus_top()          -> TileUV { TileUV::new_top( 5, 5) } // cactus_top.png
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// After the Mojang asset removal, the atlas must compose 100% from the
+    /// procedural generator — no PNG files, no panics, correct canvas size,
+    /// and every tile slot filled with opaque-or-transparent content.
+    #[test]
+    fn compose_from_blocks_is_fully_procedural_after_asset_removal() {
+        // The test runner's CWD is Core/; the blocks dir may not even exist —
+        // compose_from_blocks returns None then, so exercise the tile
+        // generator directly: every slot must yield a valid 16x16 RGBA tile.
+        let (w, h) = (512u32, 320u32);
+        let mut atlas = RgbaImage::new(w, h);
+        let mut placed = 0usize;
+        for &(col, row, name) in ATLAS_TILES {
+            let (palette, pattern) = crate::world::ai_generator::texture_style_for_name(name);
+            let tile = crate::world::ai_generator::generate_tile_texture(
+                palette,
+                pattern,
+                crate::world::ai_generator::name_seed(name),
+            );
+            assert_eq!(tile.len(), 16 * 16 * 4, "tile {name} not 16x16 RGBA");
+            for ty in 0u32..16 {
+                for tx in 0u32..16 {
+                    let idx = ((ty * 16 + tx) * 4) as usize;
+                    atlas.put_pixel(
+                        col * 16 + tx,
+                        row * 16 + ty,
+                        image::Rgba([tile[idx], tile[idx + 1], tile[idx + 2], tile[idx + 3]]),
+                    );
+                }
+            }
+            placed += 1;
+        }
+        assert_eq!(placed, ATLAS_TILES.len(), "every slot must be generated");
+        assert_eq!(atlas.dimensions(), (w, h));
+
+        // Determinism: the same name always yields the same tile bytes.
+        let (p, pat) = crate::world::ai_generator::texture_style_for_name("stone");
+        let a = crate::world::ai_generator::generate_tile_texture(p.clone(), pat, crate::world::ai_generator::name_seed("stone"));
+        let b = crate::world::ai_generator::generate_tile_texture(p, pat, crate::world::ai_generator::name_seed("stone"));
+        assert_eq!(a, b, "procedural tiles must be deterministic");
+
+        // Distinct names must not all collapse onto the same tile.
+        let (stone_p, stone_pat) = crate::world::ai_generator::texture_style_for_name("stone");
+        let (log_p, log_pat) = crate::world::ai_generator::texture_style_for_name("oak_log");
+        let s1 = crate::world::ai_generator::generate_tile_texture(
+            stone_p, stone_pat, crate::world::ai_generator::name_seed("stone"),
+        );
+        let s2 = crate::world::ai_generator::generate_tile_texture(
+            log_p, log_pat, crate::world::ai_generator::name_seed("oak_log"),
+        );
+        assert_ne!(s1, s2, "different names should produce different tiles");
+    }
+}

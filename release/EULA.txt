@@ -1,0 +1,35 @@
+====================================================
+  NV-2.0 — END USER LICENSE AGREEMENT (EULA)
+====================================================
+
+1. LICENSE GRANT
+   This is a single-copy, non-transferable license for YOU (the original
+   purchaser) to install and play NV-2.0 on your personal devices.
+
+2. LICENSE KEYS
+   The game is protected by Externum DRM. Each copy is bound to a unique
+   HMAC-signed license key. Sharing, reselling, or publicly posting your
+   key voids this license and the key will be revoked.
+
+3. RESTRICTIONS
+   You may not:
+   - redistribute, sell or sublicense the game or any part of it;
+   - modify, decompile or tamper with the game binary or launcher;
+   - remove or bypass the Externum DRM protections (license gate,
+     watermark, integrity checks);
+   - host the game for third parties.
+
+4. UPDATES
+   Updates are distributed as new signed builds. Modified copies are
+   detected by the launcher's integrity check and will not run.
+
+5. DISCLAIMER
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. NASA
+   POWER climate data is used under NASA's data policy; offline fallback
+   is provided so the game never depends on a live connection.
+
+6. TERMINATION
+   Violating sections 2–3 terminates this license immediately.
+
+(c) 2026 NV-2.0. Built with Externum.
+====================================================

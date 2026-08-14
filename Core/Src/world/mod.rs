@@ -10,9 +10,9 @@ pub mod worldgen;
 pub mod ai_generator;
 pub mod ai_feedback;
 pub mod memplp;
-pub mod decorations;
-pub mod decoration_ai;
+pub mod decorations;pub mod decoration_ai;
 pub mod online_trainer;
+pub mod meteo;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -138,6 +138,11 @@ impl World {
 
     pub fn low_end_mode_enabled(&self) -> bool {
         self.settings.low_end_pc()
+    }
+
+    /// Real (NASA POWER) or synthetic climate baseline for this world.
+    pub fn meteo(&self) -> meteo::MeteoData {
+        self.generator.meteo()
     }
 
     fn ensure_chunk_generated(&mut self, cx: i32, cz: i32) {

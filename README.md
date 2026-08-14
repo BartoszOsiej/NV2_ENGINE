@@ -75,9 +75,26 @@ Modules — one checkpoint file, implemented in `Core/Src/world/memplp.rs`:
 ## 🧱 Gameplay
 
 - Block interaction (place / mine)
-- Inventory and crafting
+- Inventory and crafting (3×3 grid, NVCrafter)
 - Commands, menus, save / load
 - Chunk-based world simulation
+
+### NV2.0 release-state mechanics (2026-08-14)
+
+- **Day/night cycle** — 10-minute days, wall-clock HUD, night darkens the sky
+- **Health & hunger** — decay, regen, starvation, death + respawn at dawn
+- **Hostiles** — night-spawning enemies that chase and attack; `/attack` to fight
+- **Tool durability** — tools wear out and break; `/repair` fixes them
+- **Progression** — achievements (`/achievements`) for surviving nights, kills…
+- **HUD** — `☀ 14:00 | ♥ 20/20 | 🍗 100/100 | ☠ 0`
+
+New commands: `/time`, `/day`, `/night`, `/eat`, `/heal`, `/attack`, `/tools`,
+`/repair`, `/achievements`, `/stats`.
+
+> ⚠️ **Assets:** the repository previously shipped ~3 700 Mojang/Minecraft
+> texture/model/recipe files. They were removed and replaced with the
+> engine's deterministic procedural texture generator — see
+> [`ASSET_AUDIT.md`](ASSET_AUDIT.md) and [`ATTRIBUTION.md`](ATTRIBUTION.md).
 
 ## 🤖 NV2.0 Phase-2 features
 
@@ -114,13 +131,15 @@ Commands: `/locate`, `/tp`, `/ai_export`, `/ai_import`, `/ai_dataset`,
 | `AI_PHASE2_ROADMAP.md` | Future plans (internet integration, GPU textures, …) |
 | `QUICKSTART.md` | Build & run instructions |
 | `CHANGELOG.md` | What changed |
+| `ASSET_AUDIT.md` | Audit & removal of Mojang assets → procedural textures |
+| `ATTRIBUTION.md` | Attributions for remaining assets (Doto font, OFL) |
 
 ## 🚀 Roadmap (Phase 2)
 
 - [ ] Downloading training datasets
 - [ ] GPU texture generation
 - [ ] Real-time terrain editing
-- [ ] Community model sharing
-- [ ] Player preference learning
+- [x] Community model sharing
+- [x] Player preference learning
 
 Details in `AI_PHASE2_ROADMAP.md`.

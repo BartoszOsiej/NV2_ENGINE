@@ -80,6 +80,23 @@ Moduły — jeden plik checkpointu, implementacja w `Core/Src/world/memplp.rs`:
 - Komendy, menu, zapis / odczyt
 - Symulacja świata oparta na chunkach
 
+### Mechaniki w stanie wydawniczym (NV2.0, 2026-08-14)
+
+- **Cykl dnia i nocy** — doba 10 minut, zegar ścienny w HUD, noc przyciemnia niebo
+- **Zdrowie i głód** — spadek głodu, regeneracja, śmierć głodowa, śmierć + respawn o świcie
+- **Wrogowie** — spawn nocą, gonią i atakują gracza; `/attack` do walki
+- **Trwałość narzędzi** — zużywają się i pękają; `/repair` naprawia
+- **Progresja** — osiągnięcia (`/achievements`) za przetrwane noce, zabójstwa…
+- **HUD** — `☀ 14:00 | ♥ 20/20 | 🍗 100/100 | ☠ 0`
+
+Nowe komendy: `/time`, `/day`, `/night`, `/eat`, `/heal`, `/attack`, `/tools`,
+`/repair`, `/achievements`, `/stats`.
+
+> ⚠️ **Assety:** repo wcześniej zawierało ~3 700 plików Mojang/Minecraft
+> (tekstury, modele bloków, przepisy, atlasy). Zostały usunięte i zastąpione
+> deterministycznym proceduralnym generatorem tekstur silnika — patrz
+> [`ASSET_AUDIT.md`](ASSET_AUDIT.md) i [`ATTRIBUTION.md`](ATTRIBUTION.md).
+
 ## 🤖 Funkcje Fazy 2 (NV2.0)
 
 - **Współdzielenie modeli** — `/ai_export <path> [author]` zapisuje
@@ -113,13 +130,15 @@ Komendy: `/locate`, `/tp`, `/ai_export`, `/ai_import`, `/ai_dataset`,
 | `AI_PHASE2_ROADMAP.md` | Przyszłe plany (integracja internetowa, tekstury GPU, …) |
 | `QUICKSTART.md` | Instrukcje budowania i uruchamiania |
 | `CHANGELOG.md` | Co się zmieniło |
+| `ASSET_AUDIT.md` | Audyt i usunięcie assetów Mojang → tekstury proceduralne |
+| `ATTRIBUTION.md` | Atrybucje pozostałych zasobów (font Doto, OFL) |
 
 ## 🚀 Roadmap (Faza 2)
 
 - [ ] Pobieranie zestawów treningowych
 - [ ] Generacja tekstur na GPU
 - [ ] Edycja terenu w czasie rzeczywistym
-- [ ] Udostępnianie modeli społeczności
-- [ ] Nauka preferencji gracza
+- [x] Udostępnianie modeli społeczności
+- [x] Nauka preferencji gracza
 
 Szczegóły w `AI_PHASE2_ROADMAP.md`.

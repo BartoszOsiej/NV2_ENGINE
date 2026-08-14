@@ -101,7 +101,7 @@ pub const BLOCK_REGISTRY: &[(u8, &str, &str)] = &[
     (96, "moss_carpet",       "moss_carpet"),
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum BlockType {
     Air = 0,

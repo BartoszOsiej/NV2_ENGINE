@@ -1,6 +1,6 @@
 # NV2.0 Engine — Test Report & QA
 
-> Generated: 2026-08-13 · Rust `cargo 1.97.1` · Linux (Arch)
+> Generated: 2026-08-14 · Rust `cargo 1.97.1` · Linux (Arch)
 > Re-run everything with:
 > ```bash
 > cd Core
@@ -9,13 +9,43 @@
 > cargo clippy --all-targets              # lint / static analysis
 > ```
 
+## 0. Release-state sweep (2026-08-14)
+
+**Result: ✅ 115 passed · 0 failed · 1 ignored** — see §1.
+
+### New gameplay mechanics (`Core/Src/gameplay.rs`, 16 tests)
+
+| Mechanic | What it is | In-game surface |
+|---|---|---|
+| **Day/night cycle** | `GameClock` — 10-min day, 24 h wall clock, night phase + darkness factor | HUD clock, sky tint (`ambient_darkness`), `/time`, `/day`, `/night` |
+| **Health & hunger** | `PlayerStats` — hunger decays, regen above 60%, starvation below, death/respawn | HUD ♥/🍗, `/eat`, `/heal`, `/stats` |
+| **Hostiles (simple AI)** | `EnemyManager` — spawn at night, chase the player, attack in range, die to `/attack` | HUD ☠ count, damage + death messages |
+| **Tool durability** | `ToolWear` — wear per use, breaks after `max_wear`, repair | `/tools`, `/repair` (wear also ticks on `/attack`) |
+| **Progression** | `AchievementTracker` — first-night, five-nights, first-kill, hunter, full-health, master-crafter | `/achievements`, unlock messages |
+| **Crafting 3×3** | Already present (`RecipeRegistry::match_grid`, `Inventory` crafting slots, NVCrafter GUI) — verified in the sweep | Inventory/NVCrafter GUI |
+
+HUD: one line top-left — `☀ 14:00 | ♥ 20/20 | 🍗 100/100 | ☠ 0`.
+
+### Asset audit — third-party content removed
+
+~3 700 Mojang/Minecraft files (textures, block models, recipes, atlas rips)
+were deleted from `Assets/` — see `ASSET_AUDIT.md`. The atlas now composes
+100% from the deterministic procedural generator
+(`world::ai_generator::texture_style_for_name` + `generate_tile_texture`).
+A new test (`renderer::texture_atlas::compose_from_blocks_is_fully_procedural_after_asset_removal`)
+proves every atlas slot generates without PNG files; it also caught and
+fixed a real `u32` overflow bug (`seed as f32` → huge noise coordinates).
+The only retained third-party file is the Doto font (SIL OFL) — see
+`ATTRIBUTION.md`.
+
 ## 1. Whole-project tests
 
-**Result: ✅ 98 passed · 0 failed · 1 ignored** (the ignored one is the
-release-only benchmark) — total 99 tests, ~16 s.
+**Result: ✅ 115 passed · 0 failed · 1 ignored** (the ignored one is the
+release-only benchmark) — total 116 tests, ~17 s.
 
-> Phase-2 features added during the 2026-08-13 sweep: community model
-> sharing (export/import), JSON training-dataset import, player-preference
+> 2026-08-14: +16 `gameplay` tests (clock, survival stats, enemy AI,
+> tool wear, achievements) and +1 procedural-atlas test. 2026-08-13:
+> community model sharing, JSON training-dataset import, player-preference
 > learning, and the `/ai_*` command set — each with tests.
 
 ## 2. Per-module tests
