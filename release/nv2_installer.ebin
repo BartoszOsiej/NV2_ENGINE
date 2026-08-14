@@ -1,0 +1,254 @@
+# ============================================================
+# Externum :: NV2.0 :: protected build
+#   app_id : nv2-engine
+#   author : NV-2.0
+#   build  : 1786704396
+#   source : sha256:917d47a67510b32435f52065b9b7cc54a3edccf0ff35e2adbc205defc822614d
+#   This file is watermarked and integrity-checked. Do not edit.
+# ============================================================
+def _ext_s(_b64):
+    import base64
+    return base64.b64decode(_b64).decode("utf-8")
+APP_ID = _ext_s("bnYyLWVuZ2luZQ==")
+AUTHOR = _ext_s("TlYtMi4w")
+VERSION = _ext_s("MS4wLjA=")
+EXPECTED_LICENSE_SHA = _ext_s("M2ExZDRhYjlkNzRjODMyYjkwMTAwZDNkM2JkNWZjOTc0MzkyOWY2ZGMxMmY1NWE4MTE0OGQxMGNmOGU5MTBmYw==")
+EXPECTED_BINARY_SHA = _ext_s("OGJhZDg3NDU3NDcyYWQ0MGRlZmYxY2ZjZmY0ZWU4MjYyZjhjMmE3MTk2ZmVkN2FlMDFkNDkwYWQxYWNjZDVlOQ==")
+GAME_BINARY = _ext_s("bnYyX2VuZ2luZQ==")
+LAUNCHER_FILE = _ext_s("bnYyX2xhdW5jaGVyLmViaW4=")
+PACKAGE_KEY = _ext_s("bnYyLmtleQ==")
+INSTALL_KEY = _ext_s("bnYyLmxpYw==")
+README_FILE = _ext_s("UkVBRE1FLnR4dA==")
+EULA_FILE = _ext_s("RVVMQS50eHQ=")
+def file_exists(path):
+    import os
+    return os.path.isfile(path)
+def is_dir(path):
+    import os
+    return os.path.isdir(path)
+def mkdir_p(path):
+    import os
+    if not os.path.isdir(path):
+        os.makedirs(path)
+def write_file(path , content):
+    fh = open(path, _ext_s("dw=="), encoding=_ext_s("dXRmLTg="))
+    fh.write(content)
+    fh.close()
+def read_text(path):
+    fh = open(path, _ext_s("cg=="), encoding=_ext_s("dXRmLTg="))
+    data = fh.read()
+    fh.close()
+    return data
+def copy_file(src , dst):
+    import shutil
+    shutil.copy2(src, dst)
+    return file_exists(dst)
+def remove_file(path):
+    import os
+    try:
+        os.remove(path)
+    except:
+        pass
+def remove_tree(path):
+    import shutil
+    if is_dir(path):
+        shutil.rmtree(path)
+def sha256_file(path):
+    import hashlib
+    fh = open(path, _ext_s("cmI="))
+    blob = fh.read()
+    fh.close()
+    return hashlib.sha256(blob).hexdigest()
+def sha256_str(s):
+    import hashlib
+    return hashlib.sha256(s.encode()).hexdigest()
+def chmod_x(path):
+    import os, stat
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+def env(name , default):
+    import os
+    return str(os.environ.get(name, default))
+def expand_user(path):
+    import os
+    return os.path.expanduser(path)
+def script_dir():
+    import os, sys
+    mod = sys.modules.get(_ext_s("X19tYWluX18="))
+    fname = getattr(mod, _ext_s("X19maWxlX18="), None)
+    if fname is None:
+        return _ext_s("Lg==")
+    return os.path.dirname(os.path.abspath(fname))
+def is_windows():
+    import os
+    return os.name == _ext_s("bnQ=")
+def path_join(base , name):
+    import os
+    return os.path.join(base, name)
+def has_flag(args , flag):
+    i = 0
+    while i < len(args):
+        if args[i] == flag:
+            return True
+        i = i + 1
+    return False
+def arg_value(args , flag , default):
+    i = 0
+    while i < len(args):
+        if args[i] == flag and i + 1 < len(args):
+            return args[i + 1]
+        i = i + 1
+    return default
+def default_prefix():
+    if is_windows():
+        local = env(_ext_s("TE9DQUxBUFBEQVRB"), _ext_s(""))
+        if local == _ext_s(""):
+            local = expand_user(_ext_s("fg=="))
+        return path_join(local, _ext_s("TlYy"))
+    home = env(_ext_s("WERHX0RBVEFfSE9NRQ=="), _ext_s(""))
+    if home == _ext_s(""):
+        home = expand_user(_ext_s("fi8ubG9jYWwvc2hhcmU="))
+    return path_join(home, _ext_s("bnYy"))
+def find_key(args):
+    key = arg_value(args, _ext_s("LS1rZXk="), _ext_s(""))
+    if key != _ext_s(""):
+        return key
+    pkg_key = path_join(script_dir(), PACKAGE_KEY)
+    if file_exists(pkg_key):
+        return read_text(pkg_key).strip()
+    return _ext_s("")
+def write_desktop_entry(prefix):
+    if is_windows():
+        bat = '@echo off\r\n' + 'setlocal\r\n' + 'cd /d _ext_s("JX5kcDA=")\r\n' + _ext_s("cHl0aG9uMyAiJX5kcDA=") + LAUNCHER_FILE + '"\r\n'
+        write_file(path_join(prefix, _ext_s("bnYyX2xhdW5jaGVyLmJhdA==")), bat)
+        return
+    apps = expand_user(_ext_s("fi8ubG9jYWwvc2hhcmUvYXBwbGljYXRpb25z"))
+    mkdir_p(apps)
+    entry = '[Desktop Entry]\n' + 'Version=1.0\n' + 'Type=Application\n' + 'Name=NV-2.0\n' + 'Comment=Voxel survival with real NASA climate\n' + _ext_s("RXhlYz1weXRob24zIA==") + path_join(prefix, LAUNCHER_FILE) + '\n' + 'Terminal=false\n' + 'Categories=Game;Simulation;\n'
+    write_file(path_join(apps, _ext_s("bnYyLmRlc2t0b3A=")), entry)
+def remove_desktop_entry():
+    if is_windows():
+        remove_file(path_join(env(_ext_s("TE9DQUxBUFBEQVRB"), expand_user(_ext_s("fg=="))), _ext_s("TlYy"), _ext_s("bnYyX2xhdW5jaGVyLmJhdA==")))
+        return
+    remove_file(expand_user(_ext_s("fi8ubG9jYWwvc2hhcmUvYXBwbGljYXRpb25zL252Mi5kZXNrdG9w")))
+def install(args):
+    key = find_key(args)
+    if key == _ext_s(""):
+        print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogbGljZW5zZSBrZXkgcmVxdWlyZWQg4oCUIHBhc3MgLS1rZXkgPGtleT4gb3Igc2hpcCBudjIua2V5"))
+        return 5
+    if sha256_str(key) != EXPECTED_LICENSE_SHA:
+        print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogaW52YWxpZCBsaWNlbnNlIGtleQ=="))
+        return 3
+    package = script_dir()
+    prefix = arg_value(args, _ext_s("LS1wcmVmaXg="), default_prefix())
+    src_bin = path_join(package, GAME_BINARY)
+    if not file_exists(src_bin):
+        print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogbWlzc2luZyBnYW1lIGJpbmFyeSBpbiBwYWNrYWdlOg=="), src_bin)
+        return 4
+    print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogaW5zdGFsbGluZyB0bw=="), prefix)
+    mkdir_p(prefix)
+    dst_bin = path_join(prefix, GAME_BINARY)
+    if not copy_file(src_bin, dst_bin):
+        print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogY291bGQgbm90IGNvcHkgZ2FtZSBiaW5hcnk="))
+        return 6
+    if not is_windows():
+        chmod_x(dst_bin)
+    src_launcher = path_join(package, LAUNCHER_FILE)
+    if not file_exists(src_launcher):
+        print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogbWlzc2luZyBsYXVuY2hlciBpbiBwYWNrYWdlOg=="), src_launcher)
+        return 4
+    if not copy_file(src_launcher, path_join(prefix, LAUNCHER_FILE)):
+        print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogY291bGQgbm90IGNvcHkgbGF1bmNoZXI="))
+        return 6
+    if file_exists(path_join(package, README_FILE)):
+        copy_file(path_join(package, README_FILE), path_join(prefix, README_FILE))
+    if file_exists(path_join(package, EULA_FILE)):
+        copy_file(path_join(package, EULA_FILE), path_join(prefix, EULA_FILE))
+    write_file(path_join(prefix, INSTALL_KEY), key)
+    if sha256_file(dst_bin) != EXPECTED_BINARY_SHA:
+        print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogaW5zdGFsbGVkIGJpbmFyeSBmYWlsZWQgaW50ZWdyaXR5IGNoZWNr"))
+        return 6
+    write_desktop_entry(prefix)
+    print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogT0sg4oCUIHZlcmlmaWVkIHNoYTI1NiA=") + EXPECTED_BINARY_SHA)
+    print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogbGF1bmNoIHdpdGg6"))
+    print(_ext_s("ICBweXRob24zIA==") + path_join(prefix, LAUNCHER_FILE))
+    return 0
+def uninstall(args):
+    prefix = arg_value(args, _ext_s("LS1wcmVmaXg="), default_prefix())
+    print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogcmVtb3Zpbmc="), prefix)
+    remove_tree(prefix)
+    remove_desktop_entry()
+    print(_ext_s("TlYtMi4wIGluc3RhbGxlcjogdW5pbnN0YWxsZWQ="))
+    return 0
+def main():
+    import sys
+    args = list(sys.argv[1:])
+    do_uninstall = has_flag(args, _ext_s("LS11bmluc3RhbGw="))
+    code = 0
+    if do_uninstall:
+        code = uninstall(args)
+    else:
+        code = install(args)
+    return code
+main()
+# ---- Externum DRM runtime guard (embedded in every protected file) ----
+_EXT_DRM_APP = 'nv2-engine'
+_EXT_DRM_AUTHOR = 'NV-2.0'
+_EXT_DRM_SOURCE_SHA = '917d47a67510b32435f52065b9b7cc54a3edccf0ff35e2adbc205defc822614d'
+_EXT_DRM_EXPECTED = 'e43d1b25357837ee8477f89ea5f1beaa619ad26bdc9cb9e66a06fc30cf682c75'
+_EXT_DRM_WATERMARK = 'Externum::DRM::' + _EXT_DRM_APP + '::' + _EXT_DRM_AUTHOR
+_EXT_DRM_ARTIFACT_SHA = 'aad32004674390621a37c6f39ade5a962a038125a573968cee4261d29e9c21f6'
+
+def _ext_drm_self_check():
+    import hashlib, os, sys
+    def _h(b):
+        return hashlib.sha256(b).hexdigest()
+    # 1) license — env key must match the expected digest
+    key = os.environ.get('EXTERNUM_LICENSE', '')
+    if key:
+        if _h(key.encode()) != _EXT_DRM_EXPECTED:
+            raise RuntimeError('Externum DRM: invalid license key')
+    # 2) tamper detection — verify this file's own bytes against the
+    #    artifact hash embedded at build time
+    blob = None
+    try:
+        mod = sys.modules.get('__main__')
+        fname = getattr(mod, '__file__', None)
+        if fname and os.path.isfile(fname):
+            with open(fname, 'rb') as fh:
+                blob = fh.read()
+    except Exception:
+        blob = None
+    if blob is not None:
+        import re as _re
+        # anchor on the DRM header block (`# ====` + marker line). The CLI
+        # may wrap the artifact, and `externum run --protect` points
+        # __file__ at the .ext source (no header -> check skipped). The
+        # two-line sequence never occurs inside the guard itself, so it
+        # cannot self-match.
+        m = list(_re.finditer(rb'# ={10,}\n# Externum :: NV2.0 :: protected build', blob))
+        if m:
+            blob = blob[m[-1].start():]
+            call = blob.rfind(b'_ext_drm_self_check()')
+            if call < 0:
+                raise RuntimeError('Externum DRM: malformed artifact')
+            # only comments may follow the guard. `--target all` artifacts
+            # append commented bash/binary sections (all `#` lines); any
+            # real code after the guard is tampering
+            for ln in blob[call + len(b'_ext_drm_self_check()'):].splitlines():
+                if ln.strip() and not ln.strip().startswith(b'#'):
+                    raise RuntimeError('Externum DRM: file was tampered with')
+            blob = blob[:call + len(b'_ext_drm_self_check()') + 1]
+            # the embedded sha line is itself part of the file; splice it
+            # out (with its leading newline) before hashing — the build
+            # hashed the artifact without that line
+            needle = (b"_EXT_DRM_ARTIFACT_SHA = '" + _EXT_DRM_ARTIFACT_SHA.encode()
+                      + b"'")
+            pos = blob.find(needle)
+            if pos >= 0:
+                start = pos - 1 if pos > 0 else 0
+                blob = blob[:start] + blob[pos + len(needle):]
+            if _h(blob) != _EXT_DRM_ARTIFACT_SHA:
+                raise RuntimeError('Externum DRM: file was tampered with')
+    return _EXT_DRM_WATERMARK
+
+_ext_drm_self_check()

@@ -2,18 +2,18 @@
 # Externum :: NV2.0 :: protected build
 #   app_id : nv2-engine
 #   author : NV-2.0
-#   build  : 1786699391
-#   source : sha256:f6138a49f92260f9edd8460bd86dfe8a00e499a4b96b723e462ac02cc239de8a
+#   build  : 1786704396
+#   source : sha256:a30eb3e70b4221a1834de57201b0f972bb0be51c34c064fa7644daca410240bf
 #   This file is watermarked and integrity-checked. Do not edit.
 # ============================================================
 def _ext_s(_b64):
     import base64
     return base64.b64decode(_b64).decode("utf-8")
-EXPECTED_BINARY_SHA = _ext_s("OGE3MWIwMWYxNjBmZGUyYjg5NWZhMDI4NmViN2RhMTBiNTcwNDE2NmQ1Y2I1MzFiZTliY2MxNDcwNzIxNzBhMg==")
-EXPECTED_LICENSE_SHA = _ext_s("MjRkOTJiNWZhMTBmODViZDExODJkZGQ4NTU0YWViNjQ0M2VhMWIyZTY4YmMzZTFlZDBmM2ZhMWM0NmNhZGVlOA==")
+EXPECTED_BINARY_SHA = _ext_s("OGJhZDg3NDU3NDcyYWQ0MGRlZmYxY2ZjZmY0ZWU4MjYyZjhjMmE3MTk2ZmVkN2FlMDFkNDkwYWQxYWNjZDVlOQ==")
+EXPECTED_LICENSE_SHA = _ext_s("M2ExZDRhYjlkNzRjODMyYjkwMTAwZDNkM2JkNWZjOTc0MzkyOWY2ZGMxMmY1NWE4MTE0OGQxMGNmOGU5MTBmYw==")
 APP_ID = _ext_s("bnYyLWVuZ2luZQ==")
 AUTHOR = _ext_s("TlYtMi4w")
-GAME_BINARY = _ext_s("Li9udjJfZW5naW5l")
+GAME_BINARY = _ext_s("bnYyX2VuZ2luZQ==")
 WATERMARK = _ext_s("RXh0ZXJudW06OkRSTTo6bnYyLWVuZ2luZTo6TlYtMi4w")
 def file_exists(path):
     import os
@@ -38,42 +38,80 @@ def collect_game_args(args):
     result = []
     i = 0
     while i < len(args):
-        if args[i] == _ext_s("LS1rZXk="):
+        a = args[i]
+        if a == _ext_s("LS1rZXk=") or a == _ext_s("LS1rZXlsZXNz"):
+            i = i + 2
+        elif a == _ext_s("LUVwaWNQb3J0YWw=") or a == _ext_s("LUVwaWNBcHA=") or a == _ext_s("LWVwaWNhcHA=") or a == _ext_s("LS1lcGlj"):
             i = i + 2
         else:
-            result.append(args[i])
+            result.append(a)
             i = i + 1
     return result
+def is_keyless(args):
+    import os
+    if os.environ.get(_ext_s("TlYyX0tFWUxFU1M="), _ext_s("")) == _ext_s("MQ=="):
+        return True
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == _ext_s("LS1rZXlsZXNz") or a == _ext_s("LUVwaWNQb3J0YWw=") or a == _ext_s("LUVwaWNBcHA="):
+            return True
+        if a == _ext_s("LWVwaWNhcHA=") or a == _ext_s("LS1lcGlj"):
+            return True
+        i = i + 1
+    return False
+def script_dir():
+    import os, sys
+    mod = sys.modules.get(_ext_s("X19tYWluX18="))
+    fname = getattr(mod, _ext_s("X19maWxlX18="), None)
+    if fname is None:
+        return _ext_s("Lg==")
+    return os.path.dirname(os.path.abspath(fname))
+def read_license_file():
+    import os
+    lic = os.path.join(script_dir(), _ext_s("bnYyLmxpYw=="))
+    if not os.path.isfile(lic):
+        return _ext_s("")
+    fh = open(lic, _ext_s("cg=="), encoding=_ext_s("dXRmLTg="))
+    key = fh.read().strip()
+    fh.close()
+    return key
 def run_game(args):
-    import subprocess
-    proc = subprocess.run([GAME_BINARY] + args)
+    import os, subprocess
+    full = os.path.join(script_dir(), GAME_BINARY)
+    proc = subprocess.run([full] + args)
     return proc.returncode
 def main():
     import sys
     args = list(sys.argv[1:])
-    key = parse_key(args)
-    if key == _ext_s(""):
-        print(_ext_s("TlYtMi4wOiBsaWNlbnNlIGtleSByZXF1aXJlZCDigJQgcGFzcyAtLWtleSA8a2V5Pg=="))
-        sys.exit(2)
-    if sha256_str(key) != EXPECTED_LICENSE_SHA:
-        print(_ext_s("TlYtMi4wOiBpbnZhbGlkIGxpY2Vuc2Uga2V5"))
-        sys.exit(3)
-    if not file_exists(GAME_BINARY):
+    import os
+    game_path = os.path.join(script_dir(), GAME_BINARY)
+    if not file_exists(game_path):
         print(_ext_s("TlYtMi4wOiBnYW1lIGJpbmFyeSBtaXNzaW5nIOKAlCByZWluc3RhbGwgb3IgdXBkYXRl"))
         sys.exit(4)
-    if sha256_file(GAME_BINARY) != EXPECTED_BINARY_SHA:
+    if sha256_file(game_path) != EXPECTED_BINARY_SHA:
         print(_ext_s("TlYtMi4wOiBnYW1lIGJpbmFyeSBtb2RpZmllZCDigJQgcmVpbnN0YWxsIG9yIHVwZGF0ZQ=="))
         sys.exit(4)
+    keyless = is_keyless(args)
+    key = parse_key(args)
+    if key == _ext_s(""):
+        key = read_license_file()
+    if key == _ext_s("") and not keyless:
+        print(_ext_s("TlYtMi4wOiBsaWNlbnNlIGtleSByZXF1aXJlZCDigJQgcGFzcyAtLWtleSA8a2V5PiBvciBpbnN0YWxsIHZpYSBudjJfaW5zdGFsbGVy"))
+        sys.exit(2)
+    if key != _ext_s("") and sha256_str(key) != EXPECTED_LICENSE_SHA:
+        print(_ext_s("TlYtMi4wOiBpbnZhbGlkIGxpY2Vuc2Uga2V5"))
+        sys.exit(3)
     print(WATERMARK)
     sys.exit(run_game(collect_game_args(args)))
 main()
 # ---- Externum DRM runtime guard (embedded in every protected file) ----
 _EXT_DRM_APP = 'nv2-engine'
 _EXT_DRM_AUTHOR = 'NV-2.0'
-_EXT_DRM_SOURCE_SHA = 'f6138a49f92260f9edd8460bd86dfe8a00e499a4b96b723e462ac02cc239de8a'
-_EXT_DRM_EXPECTED = '1fff6a732be3da41dee1466faf5830b57b3fd4300a7d4894eec2aa5bc887d1df'
+_EXT_DRM_SOURCE_SHA = 'a30eb3e70b4221a1834de57201b0f972bb0be51c34c064fa7644daca410240bf'
+_EXT_DRM_EXPECTED = 'e43d1b25357837ee8477f89ea5f1beaa619ad26bdc9cb9e66a06fc30cf682c75'
 _EXT_DRM_WATERMARK = 'Externum::DRM::' + _EXT_DRM_APP + '::' + _EXT_DRM_AUTHOR
-_EXT_DRM_ARTIFACT_SHA = '4b42a1b4710b1a84b3548667aea432ac02243d5cf4820b0ee4383b3caf876d26'
+_EXT_DRM_ARTIFACT_SHA = '471bcfbd7c31cacb1d68f0519efbcc4d522bda52cac6b03ac834ea8d414a5b0d'
 
 def _ext_drm_self_check():
     import hashlib, os, sys

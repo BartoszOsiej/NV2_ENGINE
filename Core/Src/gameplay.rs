@@ -99,6 +99,8 @@ pub struct PlayerStats {
     pub max_health: f32,
     pub hunger: f32,
     pub max_hunger: f32,
+    pub thirst: f32,
+    pub max_thirst: f32,
 }
 
 impl PlayerStats {
@@ -108,27 +110,39 @@ impl PlayerStats {
             max_health: 20.0,
             hunger: 100.0,
             max_hunger: 100.0,
+            thirst: 100.0,
+            max_thirst: 100.0,
         }
     }
 
     /// Per-second survival tick:
     /// - hunger decays over ~5 game-minutes of play
-    /// - above 60% hunger the player regenerates health
-    /// - at 0 hunger the player starves
+    /// - thirst decays over ~8 game-minutes of play
+    /// - above 60% food AND 60% water the player regenerates health
+    /// - at 0 hunger the player starves; at 0 water the player dehydrates
     pub fn tick(&mut self, dt: f32) {
         if self.health <= 0.0 {
             return;
         }
         self.hunger = (self.hunger - dt * 100.0 / 300.0).max(0.0);
-        if self.hunger > self.max_hunger * 0.6 {
+        self.thirst = (self.thirst - dt * 100.0 / 500.0).max(0.0);
+        let well_fed = self.hunger > self.max_hunger * 0.6;
+        let hydrated = self.thirst > self.max_thirst * 0.6;
+        if well_fed && hydrated {
             self.health = (self.health + dt * 1.0).min(self.max_health);
         } else if self.hunger <= 0.0 {
+            self.health = (self.health - dt * 1.5).max(0.0);
+        } else if self.thirst <= 0.0 {
             self.health = (self.health - dt * 1.5).max(0.0);
         }
     }
 
     pub fn eat(&mut self, food: f32) {
         self.hunger = (self.hunger + food).min(self.max_hunger);
+    }
+
+    pub fn drink(&mut self, water: f32) {
+        self.thirst = (self.thirst + water).min(self.max_thirst);
     }
 
     /// Apply damage. Returns true if the hit was fatal.
@@ -538,7 +552,12 @@ impl GameSession {
 
     pub fn eat(&mut self, food: f32) -> String {
         self.stats.eat(food);
-        format!("Hunger: {:.0}/{:.0}", self.stats.hunger, self.stats.max_hunger)
+        format!("Food: {:.0}/{:.0}", self.stats.hunger, self.stats.max_hunger)
+    }
+
+    pub fn drink(&mut self, water: f32) -> String {
+        self.stats.drink(water);
+        format!("Water: {:.0}/{:.0}", self.stats.thirst, self.stats.max_thirst)
     }
 
     pub fn heal_player(&mut self, amount: f32) -> String {
@@ -571,7 +590,7 @@ impl GameSession {
         let (h, m) = self.clock.hour_minute();
         let icon = if self.clock.is_night() { "🌙" } else { "☀" };
         format!(
-            "{} {:02}:{:02} | ♥ {:.0}/{:.0} | 🍗 {:.0}/{:.0} | ☠ {}",
+            "{} {:02}:{:02} | ♥ {:.0}/{:.0} | 🍗 {:.0}/{:.0} | 💧 {:.0}/{:.0} | ☠ {}",
             icon,
             h,
             m,
@@ -579,6 +598,8 @@ impl GameSession {
             self.stats.max_health,
             self.stats.hunger,
             self.stats.max_hunger,
+            self.stats.thirst,
+            self.stats.max_thirst,
             self.enemies.enemies.len(),
         )
     }
@@ -636,9 +657,42 @@ mod tests {
         let mut stats = PlayerStats::new();
         stats.health = 10.0;
         stats.hunger = 80.0;
+        stats.thirst = 80.0;
         stats.tick(2.0);
-        assert!(stats.health > 10.0, "should regen with food");
+        assert!(stats.health > 10.0, "should regen with food and water");
         assert!(stats.hunger < 80.0, "hunger decays");
+    }
+
+    #[test]
+    fn stats_no_regen_when_dehydrated() {
+        let mut stats = PlayerStats::new();
+        stats.health = 10.0;
+        stats.hunger = 80.0;
+        stats.thirst = 10.0;
+        stats.tick(2.0);
+        assert!(
+            stats.health <= 10.0,
+            "thirst below threshold must block regen"
+        );
+    }
+
+    #[test]
+    fn stats_dehydrate_at_zero_thirst() {
+        let mut stats = PlayerStats::new();
+        stats.hunger = 80.0;
+        stats.thirst = 0.0;
+        stats.tick(2.0);
+        assert!(stats.health < 20.0, "dehydration damages");
+    }
+
+    #[test]
+    fn stats_drink_restores_thirst() {
+        let mut stats = PlayerStats::new();
+        stats.thirst = 0.0;
+        stats.drink(40.0);
+        assert_eq!(stats.thirst, 40.0);
+        stats.drink(500.0);
+        assert_eq!(stats.thirst, stats.max_thirst);
     }
 
     #[test]
