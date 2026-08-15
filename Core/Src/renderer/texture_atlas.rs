@@ -364,6 +364,9 @@ pub const ATLAS_TILES: &[(u32, u32, &str)] = &[
     ( 3, 5, "dead_bush"),
     ( 4, 5, "cactus_side"),
     ( 5, 5, "cactus_top"),
+    // Row 5 — wildlife fur (procedural, for the voxel animals)
+    ( 6, 5, "deer_fur"),
+    ( 7, 5, "rabbit_fur"),
 ];
 
 #[derive(Clone, Copy, Debug)]
@@ -513,6 +516,8 @@ pub fn tile_flower()              -> TileUV { TileUV::new( 2, 5) }   // dandelio
 pub fn tile_dead_bush()           -> TileUV { TileUV::new( 3, 5) }   // dead_bush.png
 pub fn tile_cactus_side()         -> TileUV { TileUV::new( 4, 5) }   // cactus_side.png
 pub fn tile_cactus_top()          -> TileUV { TileUV::new_top( 5, 5) } // cactus_top.png
+pub fn tile_deer_fur()            -> TileUV { TileUV::new( 6, 5) }   // procedural fur
+pub fn tile_rabbit_fur()          -> TileUV { TileUV::new( 7, 5) }   // procedural fur
 #[cfg(test)]
 mod tests {
     use super::*;

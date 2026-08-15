@@ -14,6 +14,7 @@ struct BiomeUniform {
     ambient: vec4<f32>,
     fog_color: vec4<f32>,
     grade: vec4<f32>,
+    atmosphere: vec4<f32>,
     view_info: vec4<f32>,
     camera_pos: vec4<f32>,
 };
@@ -53,7 +54,7 @@ fn sun_direction(sun_phase: f32) -> vec3<f32> {
     return normalize(vec3<f32>(-cos(angle), sin(angle), 0.25));
 }
 
-fn sky_color(day: f32, sun_phase: f32) -> vec3<f32> {
+fn sky_color(day: f32, sun_phase: f32, atmosphere: vec3<f32>) -> vec3<f32> {
     let sun_elev = sin((sun_phase - 0.25) * 6.283185307);
     let night_sky = vec3<f32>(0.006, 0.010, 0.048);
     let day_zenith = vec3<f32>(0.270, 0.520, 0.860);
@@ -62,9 +63,11 @@ fn sky_color(day: f32, sun_phase: f32) -> vec3<f32> {
     let twilight = vec3<f32>(0.560, 0.220, 0.460);
 
     let day_sky = mix(haze_blue, day_zenith, clamp(day * 0.90, 0.0, 1.0));
+    // Regional climate atmosphere: desert haze, rainforest teal, boreal steel.
+    let day_sky_tinted = mix(day_sky, atmosphere, 0.42 * clamp(day, 0.0, 1.0));
     let sunset_strength = clamp(1.0 - abs(sun_elev) * 3.5, 0.0, 1.0);
     let sunset_col = mix(sunset_low, twilight, clamp(0.4 - sun_elev * 2.0, 0.0, 1.0));
-    let base = mix(night_sky, day_sky, clamp(day * 1.20, 0.0, 1.0));
+    let base = mix(night_sky, day_sky_tinted, clamp(day * 1.20, 0.0, 1.0));
     return mix(base, sunset_col, sunset_strength * clamp(day * 4.0, 0.0, 0.78));
 }
 
@@ -228,8 +231,8 @@ fn fs_main(fs_input: VertexOutput) -> @location(0) vec4<f32> {
     let fog_end = biome.view_info.z;
     let sun_phase = biome.view_info.w;
     let sun_dir = sun_direction(sun_phase);
-    let sky_col = sky_color(day, sun_phase);
-    let fog_col = mix(sky_col, biome.fog_color.xyz, 0.68);
+    let sky_col = sky_color(day, sun_phase, biome.atmosphere.xyz);
+    let fog_col = mix(sky_col, mix(biome.fog_color.xyz, biome.atmosphere.xyz, 0.45), 0.68);
     let view_dist = length(fs_input.world_pos - biome.camera_pos.xyz);
     let fog_density = max(biome.fog_color.w, 0.001);
     let fog_band = smoothstep(fog_start * 0.55, fog_end, view_dist);

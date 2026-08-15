@@ -1931,6 +1931,7 @@ dependencies = [
  "env_logger",
  "fontdue",
  "image",
+ "libloading 0.8.9",
  "log",
  "ndarray",
  "num_cpus",

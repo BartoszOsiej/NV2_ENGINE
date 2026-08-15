@@ -1,0 +1,52 @@
+====================================================
+  NV-2.0 — PRIVACY POLICY
+====================================================
+
+Effective date: 2026-08-15
+
+NV-2.0 is a single-player sandbox/survival game. It collects the
+minimum possible data and shares nothing with third parties except
+where described below.
+
+1. WHAT WE COLLECT
+   - Nothing that identifies you personally is required to play.
+   - Local files only: your world saves, settings and AI checkpoints
+     are stored on your own device in your user data directory
+     (Windows: %LOCALAPPDATA%\NV2; Linux: ~/.local/share/nv2).
+     These never leave your machine.
+
+2. NETWORK REQUESTS
+   - Optional: when you start a new world and your machine is online,
+     NV-2.0 queries the NASA POWER climate API
+     (power.larc.nasa.gov) to fetch real climate data for the
+     coordinates derived from your world seed. This request sends the
+     coordinates and a fixed date range only — no personal data, no
+     account, no device fingerprint. If the request fails, the game
+     falls back to synthetic offline climate; the game is fully
+     playable without network access.
+   - No analytics, no telemetry, no advertising SDKs.
+
+3. THIRD PARTIES
+   - NASA POWER: data used under NASA's data policy
+     (https://power.larc.nasa.gov). NV-2.0 is not affiliated with NASA.
+
+4. DRM / LICENSE KEYS
+   - Purchased copies are tied to a license key issued at sale. Keys
+     are verified locally (HMAC digest); no key material or purchase
+     data is transmitted.
+
+5. CHILDREN
+   - The game contains no chat, no user-generated content sharing, no
+     microtransactions and no external links. It is suitable for all
+     ages (PEGI 3 / ESRB E).
+
+6. CONTACT
+   - For any privacy question: <support@nv2-0.example> (replace with
+     your real support address before launch).
+
+7. CHANGES
+   - This policy may be updated; the version published on the store
+     page at the time of purchase applies.
+
+(c) 2026 NV-2.0
+====================================================

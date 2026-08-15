@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.unrealengine.com/5.0/en-US/build-configuration-files-for-epic-games-store",
+  "AppName": "NV20",
+  "BuildVersion": "1.0.0",
+  "LaunchCommand": "nv2_engine.exe",
+  "LaunchCommandExpanded": "nv2_engine.exe",
+  "LaunchArgs": "",
+  "ManifestFileVersion": 1,
+  "bPreReqOnly": false,
+  "bUsesBuildRoot": true,
+  "FileIgnores": [
+    ".DS_Store",
+    "Thumbs.db"
+  ],
+  "PrereqIds": [],
+  "PrereqName": "",
+  "PrereqPath": "",
+  "PrereqArgs": "",
+  "Comment": "EGS launches nv2_engine.exe directly (keyless — the storefront is the ownership gate; the binary contains no license check). Externum DRM still protects itch.io/direct builds via nv2_launcher.ebin, which also auto-switches to keyless when Epic launches it (-EpicPortal/-EpicApp)."
+}

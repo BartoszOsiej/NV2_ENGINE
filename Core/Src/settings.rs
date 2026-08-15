@@ -8,6 +8,48 @@ use std::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// Per-user data directory for NV-2.0 — the only place settings and saves
+/// are ever written. This is never the install dir: on Epic Games Store /
+/// Windows the game lives in `Program Files` (read-only for normal users),
+/// so writing next to the executable would silently fail.
+///
+/// * Windows: `%LOCALAPPDATA%\NV2`
+/// * Linux:   `$XDG_DATA_HOME/nv2` (default `~/.local/share/nv2`)
+/// * macOS:   `~/Library/Application Support/NV2`
+pub fn user_data_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local) = env::var_os("LOCALAPPDATA") {
+            return PathBuf::from(local).join("NV2");
+        }
+        if let Some(home) = env::var_os("USERPROFILE") {
+            return PathBuf::from(home).join("AppData").join("Local").join("NV2");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = env::var_os("HOME") {
+            return PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("NV2");
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        if let Some(xdg) = env::var_os("XDG_DATA_HOME") {
+            if !xdg.is_empty() {
+                return PathBuf::from(xdg).join("nv2");
+            }
+        }
+        if let Some(home) = env::var_os("HOME") {
+            return PathBuf::from(home).join(".local").join("share").join("nv2");
+        }
+    }
+    // last resort — a writable cwd
+    env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct AppSettings {
@@ -57,11 +99,7 @@ impl AppSettings {
     }
 
     fn config_path() -> PathBuf {
-        let base_dir = env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(|dir| dir.to_path_buf()))
-            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        base_dir.join("settings.json")
+        user_data_dir().join("settings.json")
     }
 }
 
@@ -133,7 +171,7 @@ impl PerformanceProfile {
                 render_radius: 4,
                 cleanup_radius: 5,
                 fog_density_multiplier: 1.0,
-                mesh_build_budget: 2,
+                mesh_build_budget: 1,
                 water_sim_interval: 0.3,
                 water_rebuild_interval: 1.5,
                 prefer_vsync: true,

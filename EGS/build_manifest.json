@@ -1,0 +1,22 @@
+{
+  "schema": "nv2-egs-build-manifest",
+  "version": 1,
+  "generated_by": "externum tools/egs_manifest.ext",
+  "files": [
+    {
+      "path": "/EULA.txt",
+      "size": 1375,
+      "sha256": "3297a6977503cea0a6b1dcd2417f168c5a41fdc4326de0c292a4d939fb1d6132"
+    },
+    {
+      "path": "/README.txt",
+      "size": 1729,
+      "sha256": "6de291cda37a0d444312e61564dd9247a3db7e5630c17fd2fbf0857304eba7a6"
+    },
+    {
+      "path": "/nv2_engine.exe",
+      "size": 34347480,
+      "sha256": "f5b774c544b25f279213854a0ed3ce59411d3c8867d4a357bf97da741631bb4d"
+    }
+  ]
+}

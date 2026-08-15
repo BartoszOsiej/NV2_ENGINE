@@ -1,0 +1,71 @@
+name: windows-build
+
+# Cross-compiles NV-2.0 for Windows (x86_64-pc-windows-gnu) on every push
+# to main / tag, and stages the Epic Games Store build directory + the
+# Externum-generated EGS manifest as an artifact.
+#
+# Requires the mingw-w64 toolchain + the rustup windows-gnu target, both
+# installed here. No Windows runner needed.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: NV2_ENGINE
+
+      - name: Install rustup + Windows GNU target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Install mingw-w64 (Arch-compatible via apt on ubuntu-latest)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 zstd
+
+      - name: Build NV-2.0 for Windows
+        working-directory: NV2_ENGINE/Core
+        run: |
+          mkdir -p .cargo
+          printf '[target.x86_64-pc-windows-gnu]\nlinker = "x86_64-w64-mingw32-gcc"\n' > .cargo/config.toml
+          cargo build --release --target x86_64-pc-windows-gnu
+
+      - name: Checkout Externum (for DRM + manifest tooling)
+        uses: actions/checkout@v4
+        with:
+          path: externum
+          repository: ${{ github.repository_owner }}/externum
+
+      - name: Stage EGS build directory
+        working-directory: NV2_ENGINE
+        run: |
+          mkdir -p EGS/build
+          cp Core/target/x86_64-pc-windows-gnu/release/nv2_engine.exe EGS/build/
+          cp release/EULA.txt EGS/build/EULA.txt
+          cp release/README.txt EGS/build/README.txt
+
+      - name: Generate EGS manifest (Externum)
+        working-directory: externum
+        run: |
+          python3 -m externum run tools/egs_manifest.ext -- \
+            ../NV2_ENGINE/EGS/build ../NV2_ENGINE/EGS/build_manifest.json
+
+      - name: Upload EGS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: nv2-egs-build
+          path: |
+            NV2_ENGINE/EGS/build
+            NV2_ENGINE/EGS/build_manifest.json
+            NV2_ENGINE/EGS/BuildConfig.json

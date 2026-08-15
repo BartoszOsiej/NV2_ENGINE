@@ -8,6 +8,74 @@ use crate::settings::SharedSettings;
 
 pub const SEA_LEVEL: usize = 46;
 
+/// Degrees of real latitude per world block — the world maps onto a real
+/// patch of Earth, so walking north genuinely gets colder. 0.0006°/block
+/// means ±8192 blocks ≈ ±4.9° ≈ 540 km of real climate gradient.
+const LAT_PER_BLOCK: f64 = 0.0006;
+
+/// Real-world climate zone (Whittaker-style classification from measured
+/// annual temperature / precipitation). The zone decides which biome
+/// *dominates* a region; noise only creates local pockets of variety.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClimateZone {
+    /// Warmest month < 10 °C — polar: snowfields, dwarf scrub.
+    Tundra,
+    /// Cold (< 6 °C mean) — boreal conifer forest (taiga).
+    Boreal,
+    /// Mild + moderate rain — temperate forest / grassland mix.
+    Temperate,
+    /// Warm + low rain — dry grassland / steppe.
+    Dry,
+    /// Arid (< 1.2 mm/day) — desert.
+    Desert,
+    /// Hot + wet — rainforest / jungle.
+    TropicalWet,
+}
+
+/// Regional sky/fog tint for a real climate zone. This is what makes a
+/// desert world look sun-baked and a rainforest look humid — the sky and
+/// haze follow the measured climate, not a generic blue.
+fn climate_atmosphere(zone: ClimateZone, t_c: f64, p_mm: f64) -> [f32; 3] {
+    // Temperature shifts the tint warm→cool; precipitation adds haze.
+    let warmth = ((t_c + 12.0) / 42.0).clamp(0.0, 1.0) as f32;
+    let wet = (p_mm / 12.0).clamp(0.0, 1.0) as f32;
+    let base: [f32; 3] = match zone {
+        ClimateZone::Desert => [0.86, 0.76, 0.58], // dusty warm sky
+        ClimateZone::TropicalWet => [0.58, 0.74, 0.80], // humid teal
+        ClimateZone::Tundra => [0.62, 0.70, 0.84], // pale polar steel
+        ClimateZone::Boreal => [0.64, 0.74, 0.90], // cool northern blue
+        ClimateZone::Dry => [0.80, 0.78, 0.64], // warm steppe haze
+        ClimateZone::Temperate => [0.56, 0.72, 0.92], // classic blue
+    };
+    // blend toward warm on hot days, toward grey-blue when wet
+    let warm_tint = [0.86, 0.78, 0.60];
+    let wet_tint = [0.62, 0.70, 0.80];
+    let mut out = [0.0; 3];
+    for i in 0..3 {
+        let t = base[i] + (warm_tint[i] - base[i]) * warmth * 0.30;
+        out[i] = (t + (wet_tint[i] - t) * wet * 0.18).clamp(0.0, 1.0);
+    }
+    out
+}
+
+/// Whittaker-style zone from real annual temperature, warmest-month
+/// temperature and annual precipitation.
+fn whittaker_zone(t_c: f64, warmest: f64, p_mm: f64) -> ClimateZone {
+    if warmest < 10.0 {
+        ClimateZone::Tundra
+    } else if t_c < 6.0 {
+        ClimateZone::Boreal
+    } else if p_mm < 1.2 {
+        ClimateZone::Desert
+    } else if t_c >= 18.0 && p_mm > 6.0 {
+        ClimateZone::TropicalWet
+    } else if p_mm < 3.5 && t_c > 12.0 {
+        ClimateZone::Dry
+    } else {
+        ClimateZone::Temperate
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BiomeId {
     Ocean,
@@ -66,6 +134,11 @@ struct ClimateSample {
     landness: f64,
     mountainness: f64,
     swampiness: f64,
+    zone: ClimateZone,
+    /// Real annual temperature (°C) at this column's Earth location.
+    real_temp_c: f64,
+    /// Real annual precipitation (mm/day) at this column's Earth location.
+    real_precip_mm: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -91,6 +164,9 @@ pub struct SurfaceVisuals {
     pub warmth: f32,
     pub moisture: f32,
     pub lushness: f32,
+    /// Regional sky/fog tint from the real climate at this location — a
+    /// desert haze, humid rainforest teal or cold boreal steel.
+    pub atmosphere: [f32; 3],
 }
 
 impl SurfaceVisuals {
@@ -428,67 +504,98 @@ impl BiomeGenerator {
             let mut writer = WorldGenWriter::new(cx, cz, blocks);
             self.vegetation.populate_chunk(self, cx, cz, &mut writer);
             writes.extend(writer.finish());
-            
-            // ✅ AI VEGETATION (HEURISTIC) ✅
-            self.populate_ai_vegetation(cx, cz, blocks);
+
+            // Biome-aware ground cover (grass tufts, ferns, dead bushes,
+            // cactus) — noise-jittered so it never forms a visible grid.
+            self.place_ground_cover(cx, cz, blocks);
         }
     }
 
     pub fn populate_world_trees_for_chunk(&self, world: &mut crate::world::World, cx: i32, cz: i32) {
-        println!("[BIO-TREES-CALL] Chunk ({}, {}), low_end={}", cx, cz, self.settings.low_end_pc());
         if self.settings.low_end_pc() {
-            println!("[BIO-TREES-SKIP] Low end mode - skipping");
             return;
         }
         self.vegetation.populate_world_trees_for_chunk(world, self, cx, cz);
     }
-    
-    /// AI vegetation using heuristics (no neural network, thread-safe)
-    fn populate_ai_vegetation(
+
+    /// Per-block ground cover placed during chunk generation. Density and
+    /// block type follow the biome; placement is jittered by noise so the
+    /// terrain reads as natural scatter instead of a stamped grid.
+    fn place_ground_cover(
         &self,
         cx: i32,
         cz: i32,
         blocks: &mut Box<[[[BlockType; CHUNK_D]; CHUNK_H]; CHUNK_W]>,
     ) {
         let world_seed = self.seed() as i64;
-        let mut placed = 0;
-        
-        // 4x4 grid per chunk
-        for gy in 0..4 {
-            for gx in 0..4 {
-                let wx = cx * CHUNK_W as i32 + gx * 4;
-                let wz = cz * CHUNK_D as i32 + gy * 4;
-                
+
+        for z in 0..CHUNK_D {
+            for x in 0..CHUNK_W {
+                let wx = cx * CHUNK_W as i32 + x as i32;
+                let wz = cz * CHUNK_D as i32 + z as i32;
                 let sample = self.sample_column(wx, wz);
-                if sample.water_top > sample.surface { continue; }
-                
-                // Find surface Y
-                let surface_y = sample.surface;
-                let wy = surface_y + 1;
-                
-                if wy >= CHUNK_H { continue; }
-                
-                // Heuristic: High humidity -> Fern, otherwise -> Stick
-                let block_type = if sample.humidity > 0.65 {
-                    BlockType::Fern
-                } else {
-                    BlockType::Stick
+                if sample.water_top != sample.surface {
+                    continue;
+                }
+                if !self.supports_cover_surface(sample.surface_block) {
+                    continue;
+                }
+
+                // density by biome (fraction of surface blocks that get cover)
+                let density = match sample.biome {
+                    BiomeId::Plains => 0.30,
+                    BiomeId::Forest => 0.26,
+                    BiomeId::DarkForest => 0.10,
+                    BiomeId::Swamp => 0.14,
+                    BiomeId::Taiga => 0.16,
+                    BiomeId::Mountains => 0.08,
+                    BiomeId::Desert => 0.04,
+                    _ => 0.0,
                 };
-                
-                // Place in chunk
-                let lx = (wx & 15) as usize;
-                let lz = (wz & 15) as usize;
-                let ly = wy as usize;
-                
-                if ly < CHUNK_H && (cx * CHUNK_W as i32 + lx as i32) == wx && (cz * CHUNK_D as i32 + lz as i32) == wz {
-                    blocks[lx][ly][lz] = block_type;
-                    placed += 1;
+                if density <= 0.0 {
+                    continue;
+                }
+
+                let noise = n2(
+                    world_seed.wrapping_add(7_777),
+                    wx as f64 * 0.11,
+                    wz as f64 * 0.11,
+                ) as f64;
+                // [0,1] noise, higher values place cover → density fraction
+                if (noise + 1.0) * 0.5 > density {
+                    continue;
+                }
+
+                let block = match sample.biome {
+                    BiomeId::Desert => {
+                        if sample.surface_block == BlockType::Sand {
+                            BlockType::DeadBush
+                        } else {
+                            BlockType::Cactus
+                        }
+                    }
+                    BiomeId::Swamp => {
+                        if sample.humidity > 0.75 {
+                            BlockType::Fern
+                        } else {
+                            BlockType::TallGrass
+                        }
+                    }
+                    BiomeId::Taiga | BiomeId::Mountains => BlockType::TallGrass,
+                    _ => {
+                        if sample.humidity > 0.62 {
+                            BlockType::Fern
+                        } else {
+                            BlockType::TallGrass
+                        }
+                    }
+                };
+
+                let wy = sample.surface + 1;
+                if wy < CHUNK_H {
+                    blocks[x][wy][z] = block;
                 }
             }
-        }
-        
-        if placed > 0 {
-            println!("[AI-HEUR] Chunk ({}, {}): {} vegetation", cx, cz, placed);
         }
     }
 
@@ -519,26 +626,34 @@ impl BiomeGenerator {
             sample_z * 0.00195 + 22.0,
         ) + 1.0) * 0.5)
             .clamp(0.0, 1.0);
-        // NV-2.0: the real NASA POWER climate *shifts* the noise
-        // distribution instead of replacing it — local variety (forests,
-        // deserts, taiga…) survives while the whole region is genuinely
-        // warmer/wetter/colder/drier than neutral at its Earth location.
-        // A neutral (synthetic) climate shifts by 0, so offline worlds and
-        // the test suite keep the classic distribution exactly.
-        let m = &self.meteo;
-        let temperature =
-            (temperature + (m.warmth() - 0.5) as f64 * 0.6).clamp(0.0, 1.0);
-        let humidity =
-            (humidity + (m.moisture() - 0.5) as f64 * 0.6).clamp(0.0, 1.0);
+        // NV-2.0 realism: each column maps to a real Earth coordinate (the
+        // seed's anchor ± latitude/longitude offset) and the *measured*
+        // temperature / precipitation there picks the climate zone, which
+        // decides the dominant biome (desert stays desert, rainforest stays
+        // rainforest, taiga stays taiga). The noise temperature/humidity
+        // stay untouched — they carve local variety *inside* the zone
+        // (oases, clearings, forest patches, swamps).
+        let (rlat, rlon) = self.earth_position(x, z);
+        let grid = super::meteo::climate_grid();
+        let (real_temp_c, real_precip_mm) = grid.annual_at(rlat, rlon);
+        let warmest = grid
+            .monthly_temps(rlat, rlon)
+            .iter()
+            .copied()
+            .fold(f64::MIN, f64::max);
+        let zone = whittaker_zone(real_temp_c, warmest, real_precip_mm);
         let erosion = ((fbm4(self.erosion_seed, sample_x * 0.0028, sample_z * 0.0028) + 1.0) * 0.5)
             .clamp(0.0, 1.0);
         let ridges = ridge(fbm4(self.peak_seed, sample_x * 0.0048, sample_z * 0.0048)).clamp(0.0, 1.0);
         let variation = fbm4(self.detail_seed, sample_x * 0.0062, sample_z * 0.0062);
-        let landness = smooth_step(remap01(continent, -0.24, 0.12));
+        // No smooth_step here: it pushes mid-range noise to the 0/1 extremes,
+        // which turns the map into flat ocean + flat plateau. A linear remap
+        // keeps continents rolling with real coastlines.
+        let landness = remap01(continent, -0.55, 0.45);
         let mountainness = smooth_step(remap01(
             ridges * (1.0 - erosion * 0.55) + landness * 0.20,
-            0.58,
-            0.86,
+            0.62,
+            0.92,
         )) * landness;
         let lowlandness = (1.0 - mountainness) * (0.45 + erosion * 0.55);
         let swampiness = humidity * lowlandness * landness;
@@ -553,35 +668,98 @@ impl BiomeGenerator {
             landness,
             mountainness,
             swampiness,
+            zone,
+            real_temp_c,
+            real_precip_mm,
         }
     }
 
+    /// Earth coordinates (lat, lon) for a world column: the seed's anchor
+    /// plus a per-block offset so the real climate varies across the world.
+    fn earth_position(&self, x: f64, z: f64) -> (f64, f64) {
+        let (alat, alon) = super::meteo::world_coordinates(self.seed);
+        let lat = (alat + z * LAT_PER_BLOCK).clamp(-80.0, 80.0);
+        let lon = (alon + x * LAT_PER_BLOCK).rem_euclid(360.0);
+        (lat, lon)
+    }
+
+    /// Real-climate-driven biome selection: the Whittaker zone (measured
+    /// temperature / precipitation) decides which biome dominates, noise
+    /// only carves local pockets (oases in deserts, forest patches in
+    /// steppe, clearings in rainforest). Ocean / Coast / Mountains always
+    /// win where the terrain says so.
     fn select_biome(&self, climate: ClimateSample) -> BiomeId {
-        if climate.landness < 0.18 {
+        if climate.landness < 0.15 {
             return BiomeId::Ocean;
         }
-        if climate.landness < 0.30 {
+        if climate.landness < 0.27 {
             return BiomeId::Coast;
         }
         if climate.mountainness > 0.68 {
             return BiomeId::Mountains;
         }
-        if climate.temperature > 0.72 && climate.humidity < 0.28 {
-            return BiomeId::Desert;
+        let t = climate.temperature;
+        let h = climate.humidity;
+        let v = climate.variation;
+
+        match climate.zone {
+            ClimateZone::Tundra => {
+                // Polar: treeless snowfields (taiga biome, snow-covered via
+                // the real-climate snowline).
+                BiomeId::Taiga
+            }
+            ClimateZone::Boreal => {
+                // Cold conifer belt; wetter/warmer pockets turn to forest.
+                if h > 0.6 && t > 0.48 {
+                    BiomeId::Forest
+                } else if h > 0.5 && v > 0.04 {
+                    BiomeId::Forest
+                } else {
+                    BiomeId::Taiga
+                }
+            }
+            ClimateZone::Temperate => {
+                // Classic four-season mix.
+                if climate.swampiness > 0.34 && t > 0.46 && climate.landness < 0.72 {
+                    BiomeId::Swamp
+                } else if h > 0.68 && v > 0.04 {
+                    BiomeId::DarkForest
+                } else if h > 0.48 {
+                    BiomeId::Forest
+                } else {
+                    BiomeId::Plains
+                }
+            }
+            ClimateZone::Dry => {
+                // Steppe / grassland; riversides and wet pockets turn green.
+                if climate.swampiness > 0.34 && t > 0.46 {
+                    BiomeId::Swamp
+                } else if h > 0.56 && t > 0.5 {
+                    BiomeId::Forest
+                } else {
+                    BiomeId::Plains
+                }
+            }
+            ClimateZone::Desert => {
+                // Arid: desert everywhere except rare oasis/scrub pockets
+                // where local noise spikes humidity.
+                if h > 0.68 && t > 0.5 {
+                    BiomeId::Plains
+                } else {
+                    BiomeId::Desert
+                }
+            }
+            ClimateZone::TropicalWet => {
+                // Rainforest; swamps in the lowlands, jungle everywhere.
+                if climate.swampiness > 0.34 && climate.landness < 0.72 {
+                    BiomeId::Swamp
+                } else if h > 0.6 {
+                    BiomeId::DarkForest
+                } else {
+                    BiomeId::Forest
+                }
+            }
         }
-        if climate.swampiness > 0.58 && climate.temperature > 0.46 {
-            return BiomeId::Swamp;
-        }
-        if climate.temperature < 0.34 {
-            return BiomeId::Taiga;
-        }
-        if climate.humidity > 0.68 && climate.variation > 0.04 {
-            return BiomeId::DarkForest;
-        }
-        if climate.humidity > 0.48 {
-            return BiomeId::Forest;
-        }
-        BiomeId::Plains
     }
 
     fn sample_surface_height(&self, climate: ClimateSample, definition: BiomeDefinition, biome: BiomeId) -> usize {
@@ -617,9 +795,23 @@ impl BiomeGenerator {
             0.0
         };
 
-        let base = SEA_LEVEL as f64 - 20.0 + climate.landness * 26.0 + definition.base_height;
-        let rolling = macro_noise * (definition.relief * 1.6);
-        let local = local_noise * definition.relief;
+        // Continental shelf profile: the ocean floor stays deep, then the
+        // shelf ramps up to a beach near sea level, then land climbs gently
+        // inland. landness ∈ [0, 1] (0 = deep ocean, 1 = high continent).
+        let sea = SEA_LEVEL as f64;
+        // Shelf ramps slowly and keeps rising across most of the landness
+        // range, so lowlands, hills and highlands all exist (a fast ramp
+        // collapses everything into one flat plateau height).
+        let shelf = smooth_step(remap01(climate.landness, 0.10, 0.52));
+        // deep ocean floor, slowly rising across the shelf
+        let base = sea - 32.0 + shelf * 52.0;
+        // biome base offsets push highlands up / lowlands down from the shelf
+        let base = base + definition.base_height * shelf;
+        // Deep ocean gets its own strong rolling so the floor isn't a flat
+        // slab; land keeps full per-biome relief so it isn't a plateau.
+        let rolling = macro_noise * (definition.relief * 1.6) * (0.25 + shelf * 0.75)
+            + (1.0 - shelf) * macro_noise * 5.0;
+        let local = local_noise * definition.relief * (0.25 + shelf * 0.75);
         let mountain = climate.mountainness
             * (18.0 + mountain_ridge * 22.0 + (1.0 - climate.erosion) * 10.0);
 
@@ -648,11 +840,34 @@ impl BiomeGenerator {
         surface
     }
 
-    fn snowline(&self, sample: &ColumnSample) -> usize {
-        let cold = (1.0 - sample.temperature).clamp(0.0, 1.0);
-        (94.0 - cold * 18.0 - sample.mountainness * 10.0)
-            .round()
-            .clamp(70.0, 110.0) as usize
+    /// Real-climate snowline: the altitude (in world y) above which the
+    /// ground stays snow-covered. Driven by the measured annual temperature
+    /// at the column's Earth location — polar worlds snow at sea level,
+    /// deserts/rainforests almost never.
+    fn snowline(&self, wx: i32, wz: i32) -> usize {
+        let (rlat, rlon) = self.earth_position(wx as f64, wz as f64);
+        let (t_c, _) = super::meteo::climate_grid().annual_at(rlat, rlon);
+        // -15 °C → sea-level snow (y ≈ 42); +20 °C → only high peaks (y ≈ 98)
+        let coldness = ((-t_c) / 15.0).clamp(0.0, 1.0);
+        let warmness = (t_c / 20.0).clamp(0.0, 1.0);
+        let line = 90.0 - coldness * 48.0 + warmness * 8.0;
+        line.round().clamp(42.0, 100.0) as usize
+    }
+
+    /// True when a ground-cover block (grass tuft, fern, dead bush…) may
+    /// sit on top of this surface block.
+    fn supports_cover_surface(&self, block: BlockType) -> bool {
+        matches!(
+            block,
+            BlockType::Grass
+                | BlockType::ForestFloor
+                | BlockType::BloomFloor
+                | BlockType::CoarseSoil
+                | BlockType::RootedSoil
+                | BlockType::MossMat
+                | BlockType::Mud
+                | BlockType::Sand
+        )
     }
 
     fn choose_surface_block(&self, sample: &ColumnSample, wx: i32, wz: i32) -> BlockType {
@@ -696,7 +911,7 @@ impl BiomeGenerator {
                 }
             }
             BiomeId::Taiga => {
-                if sample.surface >= self.snowline(sample) {
+                if sample.surface >= self.snowline(wx, wz) {
                     BlockType::Snow
                 } else if noise > 0.46 {
                     BlockType::CoarseSoil
@@ -712,7 +927,7 @@ impl BiomeGenerator {
                 }
             }
             BiomeId::Mountains => {
-                if sample.surface >= self.snowline(sample) {
+                if sample.surface >= self.snowline(wx, wz) {
                     BlockType::Snow
                 } else if noise > 0.20 {
                     sample.definition.cliff_block
@@ -913,6 +1128,21 @@ impl BiomeGenerator {
             + sample.humidity * 0.25)
             .clamp(0.0, 1.2) as f32;
 
+        // Regional atmosphere from the real climate at this column — the
+        // sky and fog follow the measured climate of the whole region.
+        let (rlat, rlon) = self.earth_position(wx as f64, wz as f64);
+        let grid = super::meteo::climate_grid();
+        let (atmos_temp_c, atmos_precip_mm) = grid.annual_at(rlat, rlon);
+        let atmos_zone = whittaker_zone(
+            atmos_temp_c,
+            grid.monthly_temps(rlat, rlon)
+                .iter()
+                .copied()
+                .fold(f64::MIN, f64::max),
+            atmos_precip_mm,
+        );
+        let atmosphere = climate_atmosphere(atmos_zone, atmos_temp_c, atmos_precip_mm);
+
         SurfaceVisuals {
             ambient: sample.definition.ambient,
             fog_color: sample.definition.fog_color,
@@ -927,6 +1157,7 @@ impl BiomeGenerator {
             warmth: sample.temperature as f32,
             moisture: sample.humidity as f32,
             lushness,
+            atmosphere,
         }
     }
 
@@ -988,9 +1219,18 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    /// Seeds whose Earth location lands in a specific real climate zone
+    /// (see `meteo::world_coordinates`). Used so tests span the full range
+    /// of real climates instead of all landing in the Arctic.
+    const TEMPERATE_SEED: u32 = 627_736_576; // 51°N 0°E — London
+    const TROPICAL_SEED: u32 = 2_411_746_645; // 3°S 60°W — Amazon
+    const DESERT_SEED: u32 = 1_519_749_802; // 24°N 15°E — Sahara
+    const BOREAL_SEED: u32 = 330_416_127; // 60°N 90°E — Siberia
+
     fn samples_expected_biome_variety_across_known_seeds() {
-        let seeds = [42_u32, 1_337_u32, 20_260_405_u32, 0x5eed_baad_u32];
+        // The union across real climate zones must cover every biome:
+        // tropical rainforests, deserts, boreal taiga and temperate forest.
+        let seeds = [TEMPERATE_SEED, TROPICAL_SEED, DESERT_SEED, BOREAL_SEED];
         let mut seen = HashSet::new();
 
         for seed in seeds {
@@ -1016,4 +1256,156 @@ mod tests {
             assert!(seen.contains(&biome), "missing biome {:?}", biome);
         }
     }
+
+    #[test]
+    fn world_dominant_biome_matches_its_real_climate() {
+        // The core realism guarantee: a Sahara seed must be mostly desert,
+        // an Amazon seed mostly rainforest, a Siberian seed mostly taiga.
+        let cases = [
+            (DESERT_SEED, BiomeId::Desert, 0.30, false),
+            (TROPICAL_SEED, BiomeId::Forest, 0.45, true), // Forest+DarkForest = rainforest
+            (BOREAL_SEED, BiomeId::Taiga, 0.40, false),
+        ];
+
+        for (seed, dominant, min_share, plus_dark) in cases {
+            let generator = BiomeGenerator::new(seed);
+            let mut counts = std::collections::HashMap::new();
+            let mut land = 0usize;
+            for wz in (-768..=768).step_by(32) {
+                for wx in (-768..=768).step_by(32) {
+                    let b = generator.get_biome(wx, wz);
+                    if matches!(b, BiomeId::Ocean | BiomeId::Coast) {
+                        continue;
+                    }
+                    land += 1;
+                    *counts.entry(b).or_insert(0usize) += 1;
+                }
+            }
+            let mut share = *counts.get(&dominant).unwrap_or(&0) as f64 / land as f64;
+            if plus_dark {
+                share += *counts.get(&BiomeId::DarkForest).unwrap_or(&0) as f64 / land as f64;
+            }
+            assert!(
+                share >= min_share,
+                "seed {seed}: {:?} share {share:.0}% < {min_share}% — world does not match its real climate",
+                dominant
+            );
+        }
+    }
+
+    #[test]
+    fn terrain_has_healthy_distribution_and_no_flat_plateau() {
+        // Regression guard for the worldgen overhaul: the map must not be a
+        // giant flat ocean/plateau (bimodal landness used to clamp most of
+        // the map to a single height) and water must not swallow the world.
+        let mut water_share = 0.0f64;
+
+        for seed in [42_u32, 1_337_u32, 20_260_405_u32] {
+            let generator = BiomeGenerator::new(seed);
+            let mut seed_water = 0usize;
+            let mut seed_total = 0usize;
+            let mut seed_hist = [0usize; CHUNK_H.div_ceil(8)];
+
+            for wz in (-640..=640).step_by(8) {
+                for wx in (-640..=640).step_by(8) {
+                    let sample = generator.sample_column(wx, wz);
+                    seed_total += 1;
+                    if sample.water_top > sample.surface {
+                        seed_water += 1;
+                    }
+                    let bucket = (sample.surface / 8).min(seed_hist.len() - 1);
+                    seed_hist[bucket] += 1;
+                }
+            }
+
+            // no single 8-block height band may dominate the map
+            for (bucket, &count) in seed_hist.iter().enumerate() {
+                let share = count as f64 / seed_total as f64;
+                if share > 0.45 {
+                    panic!(
+                        "seed {seed}: bucket y={} holds {:.0}% of columns — flat plateau, bucket share must stay < 45%",
+                        bucket * 8,
+                        share * 100.0,
+                    );
+                }
+            }
+
+            let share = seed_water as f64 / seed_total as f64;
+            assert!(
+                share < 0.40,
+                "seed {seed}: {:.0}% underwater — must stay under 40%",
+                share * 100.0
+            );
+            assert!(
+                share > 0.02,
+                "seed {seed}: only {:.0}% underwater — oceans should exist for variety",
+                share * 100.0
+            );
+            water_share += share;
+        }
+
+        let _avg = water_share / 3.0;
+    }
+
+    #[test]
+    fn cover_vegetation_respects_biome_surface() {
+        // The ground-cover pass must only place on biome-appropriate surfaces
+        // (no sticks floating over water / sand-in-plains-style nonsense).
+        // Temperate world — the classic mix of plains/forest with cover.
+        let generator = BiomeGenerator::new(TEMPERATE_SEED);
+        let mut cover_count = 0;
+        let mut unsupported = 0usize;
+        for cz in -1..=1 {
+            for cx in -1..=1 {
+                let mut blocks = Box::new([[[BlockType::Air; CHUNK_D]; CHUNK_H]; CHUNK_W]);
+                let mut writes = Vec::new();
+                generator.populate_chunk(cx, cz, &mut blocks, &mut writes);
+
+                for x in 0..CHUNK_W {
+                    for z in 0..CHUNK_D {
+                        // find the topmost non-air block in this column
+                        let mut top = None;
+                        for y in (1..CHUNK_H).rev() {
+                            if blocks[x][y][z] != BlockType::Air {
+                                top = Some(y);
+                                break;
+                            }
+                        }
+                        if let Some(y) = top {
+                            let block = blocks[x][y][z];
+                            if matches!(
+                                block,
+                                BlockType::TallGrass
+                                    | BlockType::Fern
+                                    | BlockType::DeadBush
+                                    | BlockType::Cactus
+                                    | BlockType::Stick
+                                    | BlockType::StickSmall
+                            ) {
+                                cover_count += 1;
+                                // cover must sit on a supported surface
+                                assert_ne!(y, 0);
+                                if !matches!(
+                                    blocks[x][y - 1][z],
+                                    BlockType::Grass
+                                        | BlockType::ForestFloor
+                                        | BlockType::BloomFloor
+                                        | BlockType::CoarseSoil
+                                        | BlockType::RootedSoil
+                                        | BlockType::MossMat
+                                        | BlockType::Mud
+                                        | BlockType::Sand
+                                ) {
+                                    unsupported += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(cover_count > 0, "expected ground cover in the chunks");
+        assert_eq!(unsupported, 0, "cover placed on unsupported surface");
+    }
 }
+

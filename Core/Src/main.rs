@@ -14,6 +14,7 @@ use winit::{
 
 mod commands;
 mod crafting;
+mod egs;
 mod gameplay;
 mod interaction;
 mod inventory;
@@ -49,6 +50,12 @@ struct App {
     fps_frames:   u32,
     /// NV2.0 gameplay session — clock, survival stats, hostiles, achievements.
     session:      gameplay::GameSession,
+    /// `--autostart`: skip the main menu and start a new world immediately.
+    autostart:    bool,
+    /// `--seed <n>`: deterministic world seed (QA / store screenshots).
+    fixed_seed:   Option<u32>,
+    /// Epic Online Services bridge (dynamic SDK load; no-op without EGS).
+    eos:          egs::EosBridge,
 }
 
 impl App {
@@ -62,11 +69,9 @@ impl App {
     }
 
     fn default_save_path() -> PathBuf {
-        let exe_dir = env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        exe_dir.join("saves").join("world.json")
+        // Per-user data dir — never next to the executable (EGS/Program
+        // Files is read-only for normal users). See settings::user_data_dir.
+        settings::user_data_dir().join("saves").join("world.json")
     }
 
     fn title_text(&self) -> String {
@@ -343,31 +348,38 @@ impl App {
             fps_accum:      0.0,
             fps_frames:     0,
             session:        gameplay::GameSession::new(),
+            autostart:      false,
+            fixed_seed:     None,
+            eos:            egs::EosBridge::new(&egs::EpicLaunchArgs::from_args(
+                &env::args().collect::<Vec<_>>(),
+            )),
         }
     }
 
     fn start_new_game(&mut self) {
         self.reset_game_context();
-        // Generate a well-distributed seed — different every call.
-        let now  = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-        let seed = (now.as_secs() as u32)
-            .wrapping_mul(1_664_525)
-            .wrapping_add(now.subsec_nanos())
-            .wrapping_mul(1_013_904_223);
+        // Deterministic seed for QA/store shots, otherwise a fresh random
+        // world on every call.
+        let seed = self.fixed_seed.unwrap_or_else(|| {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+            (now.as_secs() as u32)
+                .wrapping_mul(1_664_525)
+                .wrapping_add(now.subsec_nanos())
+                .wrapping_mul(1_013_904_223)
+        });
         self.world = world::World::new_with_settings(seed, self.settings.clone());
         self.mode = AppMode::Playing;
-        // NV-2.0: announce the world's real (NASA POWER) climate
+        // NV-2.0: announce the world's real climate (embedded NCEP
+        // climatology, refined by NASA POWER when online) and its seasons.
         let meteo = self.world.meteo();
-        let source = if world::meteo::is_real_meteo() {
-            "NASA POWER".to_string()
-        } else {
-            "synthetic (offline)".to_string()
-        };
+        let (lat, lon) = world::meteo::world_coordinates(seed);
         self.set_status_message(format!(
-            "New game started. Climate: {} {:.0}°C | {} | Esc = pause",
+            "New game started. {:.0}°N {:.0}°E | {} {:.0}°C | {} | Esc = pause",
+            lat,
+            lon,
             meteo.weather_label(),
             meteo.temperature_c,
-            source
+            meteo.source
         ));
         self.update_window_title();
         let spawn = self.world.find_spawn_point();
@@ -470,6 +482,16 @@ impl ApplicationHandler for App {
         }
         self.state = Some(state);
         self.update_window_title();
+        // `--autostart`: boot straight into a fresh world once the renderer
+        // is up (used for store screenshots and QA).
+        if self.autostart && self.mode != AppMode::Playing {
+            self.start_new_game();
+            if let Some(state) = self.state.as_mut() {
+                state.input_captured = true;
+                state.window.set_cursor_visible(false);
+                let _ = state.window.set_cursor_grab(CursorGrabMode::Locked);
+            }
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -741,6 +763,12 @@ impl ApplicationHandler for App {
                         let player = (state.camera.position.x, state.camera.position.z);
                         let feedback = self.session.update(dt, player);
                         pending_messages.extend(feedback.messages);
+                        // EOS: tick the SDK and push any newly unlocked
+                        // achievements to Epic (no-op when not connected).
+                        self.eos.tick(dt);
+                        for id in &feedback.unlocked_achievements {
+                            self.eos.unlock_achievement(id);
+                        }
                         if feedback.died {
                             pending_messages.push("You died!".to_string());
                             pending_messages.push(self.session.respawn());
@@ -749,17 +777,117 @@ impl ApplicationHandler for App {
                             state.camera.velocity = cgmath::Vector3::new(0.0, 0.0, 0.0);
                             state.camera.on_ground = true;
                         }
+                        // NV-2.0: wildlife — biome-appropriate animals wander
+                        // around the player and flee when approached.
+                        let cam_pos = state.camera.position;
+                        let mut animal_spawns: Vec<(gameplay::AnimalKind, (f32, f32, f32))> = Vec::new();
+                        if let Some((kind, pos)) =
+                            self.world.find_animal_spawn(cam_pos.x, cam_pos.z, state.camera.yaw)
+                        {
+                            animal_spawns.push((kind, pos));
+                        }
+                        self.session.animals.update(dt, player, &animal_spawns);
+                        // Build render instances (body + head + legs as cubes).
+                        let mut animal_instances: Vec<renderer::AnimalInstance> = Vec::new();
+                        for animal in &self.session.animals.animals {
+                            // Walk cycle: bob body, swing legs in opposing pairs,
+                            // faster and deeper when fleeing.
+                            let fleeing = animal.flee_timer > 0.0;
+                            let gait = if fleeing { 1.7 } else { 1.0 };
+                            let phase = animal.bob * 3.0;
+                            let hop = (animal.bob.sin() * 0.06).max(0.0);
+                            let sway = phase.sin() * 0.05 * gait; // body roll
+                            let (h_s, h_c) = (animal.heading.sin(), animal.heading.cos());
+                            let col = animal.kind.color();
+                            let fur_uv = match animal.kind {
+                                gameplay::AnimalKind::Deer => {
+                                    let t = renderer::texture_atlas::tile_deer_fur();
+                                    [t.u0, t.v0]
+                                }
+                                gameplay::AnimalKind::Rabbit => {
+                                    let t = renderer::texture_atlas::tile_rabbit_fur();
+                                    [t.u0, t.v0]
+                                }
+                            };
+                            let mut cube = |ox: f32, oy: f32, oz: f32, sx: f32, sy: f32, sz: f32, color: [f32; 3], leg_swing: f32| {
+                                animal_instances.push(renderer::AnimalInstance {
+                                    pos: [
+                                        animal.x + (ox + leg_swing) * h_c - oz * h_s,
+                                        animal.y + oy + hop,
+                                        animal.z + (ox + leg_swing) * h_s + oz * h_c,
+                                    ],
+                                    _pad0: 0.0,
+                                    size: [sx, sy, sz],
+                                    _pad1: 0.0,
+                                    color,
+                                    _pad2: 0.0,
+                                    rot: animal.heading + sway,
+                                    _pad3: 0.0,
+                                    uv: fur_uv,
+                                });
+                            };
+                            match animal.kind {
+                                gameplay::AnimalKind::Deer => {
+                                    cube(0.0, 0.50, 0.0, 0.95, 0.55, 0.45, col, 0.0);
+                                    cube(0.42, 0.95, 0.0, 0.34, 0.34, 0.40, col, 0.0);
+                                    let swing = phase.sin() * 0.30 * gait;
+                                    let legs = [
+                                        (-0.28, -0.16, 0.0),
+                                        (0.28, -0.16, std::f32::consts::PI),
+                                        (-0.28, 0.16, std::f32::consts::PI),
+                                        (0.28, 0.16, 0.0),
+                                    ];
+                                    for (lx, lz, lp) in legs {
+                                        cube(lx, 0.25, lz, 0.14, 0.50, 0.14, col, swing * lp.sin());
+                                    }
+                                }
+                                gameplay::AnimalKind::Rabbit => {
+                                    cube(0.0, 0.28, 0.0, 0.42, 0.32, 0.52, col, 0.0);
+                                    cube(0.30, 0.55, 0.0, 0.26, 0.26, 0.26, col, 0.0);
+                                    let swing = phase.sin() * 0.22 * gait;
+                                    cube(-0.16, 0.12, -0.14, 0.10, 0.14, 0.10, col, swing);
+                                    cube(0.16, 0.12, -0.14, 0.10, 0.14, 0.10, col, -swing);
+                                }
+                            }
+                        }
+                        state.animal_instances = animal_instances;
+
                         state.hud_line = self.session.hud_line();
                         state.ambient_darkness = self.session.clock.darkness();
-                        // NV-2.0: real NASA POWER climate in the HUD and sky.
+                        // The sky, sun and terrain lighting follow the game
+                        // clock so dawn/day/dusk/night match the HUD time.
+                        state.day_fraction = self.session.clock.phase();
+                        // NV-2.0: real climate in the HUD and sky — seasonal
+                        // temperature/label from the embedded climatology,
+                        // cloud cover follows the day's precipitation.
                         let meteo = self.world.meteo();
+                        let day_of_year = (self.session.clock.day_count % 365) + 1;
+                        let temp = meteo.temp_for_day(day_of_year);
+                        let precip = meteo.precip_for_day(day_of_year);
                         state.hud_line = format!(
-                            "{} | {} {:.0}°C",
+                            "{} | {} {:.0}°C | day {}",
                             self.session.hud_line(),
-                            meteo.weather_label(),
-                            meteo.temperature_c
+                            meteo.weather_label_for_day(day_of_year),
+                            temp,
+                            self.session.clock.day_count + 1
                         );
-                        state.cloud_cover = meteo.cloud_cover();
+                        state.cloud_cover = meteo.cloud_cover_for_day(day_of_year);
+                        // NV-2.0: live weather — rain in wet climates, snow
+                        // in winter, nothing when clear.
+                        if self.settings.low_end_pc() {
+                            state.weather_kind = 0.0;
+                            state.weather_intensity = 0.0;
+                        } else if precip > 0.6 && temp < 0.5 {
+                            state.weather_kind = 2.0;
+                            state.weather_intensity = (precip as f32 / 6.0).clamp(0.25, 1.0);
+                        } else if precip > 1.0 {
+                            state.weather_kind = 1.0;
+                            state.weather_intensity = (precip as f32 / 8.0).clamp(0.25, 1.0);
+                        } else {
+                            state.weather_kind = 0.0;
+                            state.weather_intensity = 0.0;
+                        }
+                        state.weather_wind = meteo.wind_ms as f32;
                     }
                     self.input.clear_frame();
 
@@ -798,9 +926,32 @@ impl ApplicationHandler for App {
     }
 }
 
+const VERSION: &str = "1.0.0";
+
 fn main() {
+    // EGS / direct-launch support: `--version` must work without a display
+    // (store manifests and support tools call it to identify the build).
+    let argv: Vec<String> = env::args().collect();
+    if argv.iter().any(|a| a == "--version" || a == "-v") {
+        println!("NV-2.0 v{}", VERSION);
+        return;
+    }
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let mut app = App::new();
+    // Demo/QA convenience: `--autostart` skips the main menu and boots
+    // straight into a fresh world (used for store screenshots + testing).
+    if argv.iter().any(|a| a == "--autostart") {
+        app.autostart = true;
+    }
+    // `--seed <n>`: deterministic world for QA and store screenshots.
+    if let Some(pos) = argv.iter().position(|a| a == "--seed") {
+        if let Some(raw) = argv.get(pos + 1) {
+            if let Ok(seed) = raw.parse::<u32>() {
+                app.fixed_seed = Some(seed);
+                app.autostart = true;
+            }
+        }
+    }
     let _ = event_loop.run_app(&mut app);
 }
