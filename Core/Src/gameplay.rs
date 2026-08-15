@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 
+use crate::world::biomes::BiomeId;
 use crate::world::BlockType;
 
 /// Full day/night cycle length in real seconds (10 minutes = one day).
@@ -165,6 +166,169 @@ impl PlayerStats {
 }
 
 impl Default for PlayerStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ------------------------------------------------------------------ Animals
+/// Passive wildlife — the reason the world doesn't feel dead. Animals
+/// wander, hop and flee from the player, and only spawn in biomes where
+/// they belong (deer in forests, rabbits in plains — never in a desert).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnimalKind {
+    Deer,
+    Rabbit,
+}
+
+impl AnimalKind {
+    /// Fur colour used by the renderer.
+    pub fn color(self) -> [f32; 3] {
+        match self {
+            AnimalKind::Deer => [0.62, 0.44, 0.28],
+            AnimalKind::Rabbit => [0.86, 0.84, 0.78],
+        }
+    }
+
+    pub fn speed(self) -> f32 {
+        match self {
+            AnimalKind::Deer => 2.4,
+            AnimalKind::Rabbit => 3.6,
+        }
+    }
+
+    /// Whether this animal can live in the given biome.
+    pub fn lives_in(self, biome: BiomeId) -> bool {
+        match self {
+            AnimalKind::Deer => matches!(
+                biome,
+                BiomeId::Forest
+                    | BiomeId::DarkForest
+                    | BiomeId::Taiga
+                    | BiomeId::Swamp
+                    | BiomeId::Mountains
+            ),
+            AnimalKind::Rabbit => matches!(biome, BiomeId::Plains | BiomeId::Coast),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Animal {
+    pub id: u64,
+    pub kind: AnimalKind,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub heading: f32,
+    pub wander_timer: f32,
+    pub flee_timer: f32,
+    /// Animation phase (hop/sway) — starts from a per-animal offset.
+    pub bob: f32,
+}
+
+pub struct AnimalManager {
+    pub animals: Vec<Animal>,
+    pub next_id: u64,
+    pub spawn_timer: f32,
+    pub max_animals: usize,
+    /// Biome at the player — decides which animals may spawn nearby.
+    pub biome: Option<BiomeId>,
+}
+
+impl AnimalManager {
+    pub fn new() -> Self {
+        Self {
+            animals: Vec::new(),
+            next_id: 1,
+            spawn_timer: 1.0,
+            max_animals: 10,
+            biome: None,
+        }
+    }
+
+    /// Advance wildlife. `candidates` are pre-computed land positions near
+    /// the player (the world knows the terrain; this module does not).
+    /// Returns the player-distance of the closest animal (for the HUD).
+    pub fn update(
+        &mut self,
+        dt: f32,
+        player: (f32, f32),
+        candidates: &[(AnimalKind, (f32, f32, f32))],
+    ) -> Option<f32> {
+        // Top up the herd with the pre-computed spawn positions.
+        self.spawn_timer -= dt;
+        if self.spawn_timer <= 0.0 && self.animals.len() < self.max_animals {
+            self.spawn_timer = 1.4;
+            if let Some(&(kind, (x, y, z))) = candidates.first() {
+                self.animals.push(Animal {
+                    id: self.next_id,
+                    kind,
+                    x,
+                    y,
+                    z,
+                    heading: (self.next_id as f32) * 2.399_963,
+                    wander_timer: 1.0,
+                    flee_timer: 0.0,
+                    bob: (self.next_id as f32) * 1.7,
+                });
+                self.next_id += 1;
+            }
+        }
+
+        // Despawn stragglers so the herd follows the player.
+        self.animals.retain(|a| {
+            let dx = a.x - player.0;
+            let dz = a.z - player.1;
+            dx * dx + dz * dz < 80.0 * 80.0
+        });
+
+        let mut closest: Option<f32> = None;
+        for a in &mut self.animals {
+            a.bob += dt * 5.0;
+            let dx = player.0 - a.x;
+            let dz = player.1 - a.z;
+            let dist_sq = dx * dx + dz * dz;
+            closest = Some(closest.map_or(dist_sq, |c: f32| c.min(dist_sq)));
+
+            if dist_sq < 6.0 * 6.0 {
+                // Panic: run away from the player.
+                a.flee_timer = 2.5;
+            }
+            if a.flee_timer > 0.0 {
+                a.flee_timer -= dt;
+                let dist = dist_sq.sqrt().max(0.001);
+                a.x -= dx / dist * a.kind.speed() * 1.7 * dt;
+                a.z -= dz / dist * a.kind.speed() * 1.7 * dt;
+            } else {
+                // Graze: turn gently and stroll.
+                a.wander_timer -= dt;
+                if a.wander_timer <= 0.0 {
+                    a.wander_timer = 2.0 + (a.id % 3) as f32;
+                    a.heading += (a.id as f32 * 0.77).sin() * 1.4 + 0.6;
+                }
+                a.x += a.heading.cos() * a.kind.speed() * 0.30 * dt;
+                a.z += a.heading.sin() * a.kind.speed() * 0.30 * dt;
+            }
+        }
+        closest.map(|d| d.sqrt())
+    }
+
+    /// The animal kind that may spawn here (None in deserts/tundra/ocean).
+    pub fn next_kind(&self) -> Option<AnimalKind> {
+        match self.biome {
+            Some(BiomeId::Plains) | Some(BiomeId::Coast) => Some(AnimalKind::Rabbit),
+            Some(BiomeId::Forest)
+            | Some(BiomeId::DarkForest)
+            | Some(BiomeId::Taiga)
+            | Some(BiomeId::Swamp)
+            | Some(BiomeId::Mountains) => Some(AnimalKind::Deer),
+            _ => None,
+        }
+    }
+}
+
+impl Default for AnimalManager {
     fn default() -> Self {
         Self::new()
     }
@@ -476,12 +640,15 @@ impl Default for AchievementTracker {
 pub struct SessionFeedback {
     pub messages: Vec<String>,
     pub died: bool,
+    /// Achievement IDs unlocked this tick (for EOS / store reporting).
+    pub unlocked_achievements: Vec<String>,
 }
 
 pub struct GameSession {
     pub clock: GameClock,
     pub stats: PlayerStats,
     pub enemies: EnemyManager,
+    pub animals: AnimalManager,
     pub wear: ToolWear,
     pub achievements: AchievementTracker,
     /// Tracked so night→morning transitions count exactly once.
@@ -494,6 +661,7 @@ impl GameSession {
             clock: GameClock::new(DAY_LENGTH_SECONDS),
             stats: PlayerStats::new(),
             enemies: EnemyManager::new(),
+            animals: AnimalManager::new(),
             wear: ToolWear::new(64),
             achievements: AchievementTracker::new(),
             prev_night: false,
@@ -514,6 +682,10 @@ impl GameSession {
                     "Achievement unlocked: first-night — survived night #{}!",
                     self.achievements.nights_survived
                 ));
+                fb.unlocked_achievements.push("first-night".to_string());
+            }
+            if self.achievements.nights_survived >= 5 {
+                fb.unlocked_achievements.push("five-nights".to_string());
             }
         }
         self.prev_night = night;
@@ -536,6 +708,7 @@ impl GameSession {
                 EnemyEvent::Killed(_) => {
                     if self.achievements.record_kill() {
                         fb.messages.push("Achievement: first-kill!".to_string());
+                        fb.unlocked_achievements.push("first-kill".to_string());
                     }
                 }
             }
@@ -545,6 +718,7 @@ impl GameSession {
         if self.stats.health >= self.stats.max_health {
             if self.achievements.record_full_health() {
                 fb.messages.push("Achievement: full-health!".to_string());
+                fb.unlocked_achievements.push("full-health".to_string());
             }
         }
         fb

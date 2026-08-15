@@ -2,8 +2,8 @@
 # Externum :: NV2.0 :: protected build
 #   app_id : nv2-engine
 #   author : NV-2.0
-#   build  : 1786704396
-#   source : sha256:917d47a67510b32435f52065b9b7cc54a3edccf0ff35e2adbc205defc822614d
+#   build  : 1786789977
+#   source : sha256:216a0915839538b9694918019ea43e19847a6f00d58f3f0dc82894a012ba3ba9
 #   This file is watermarked and integrity-checked. Do not edit.
 # ============================================================
 def _ext_s(_b64):
@@ -12,8 +12,8 @@ def _ext_s(_b64):
 APP_ID = _ext_s("bnYyLWVuZ2luZQ==")
 AUTHOR = _ext_s("TlYtMi4w")
 VERSION = _ext_s("MS4wLjA=")
-EXPECTED_LICENSE_SHA = _ext_s("M2ExZDRhYjlkNzRjODMyYjkwMTAwZDNkM2JkNWZjOTc0MzkyOWY2ZGMxMmY1NWE4MTE0OGQxMGNmOGU5MTBmYw==")
-EXPECTED_BINARY_SHA = _ext_s("OGJhZDg3NDU3NDcyYWQ0MGRlZmYxY2ZjZmY0ZWU4MjYyZjhjMmE3MTk2ZmVkN2FlMDFkNDkwYWQxYWNjZDVlOQ==")
+EXPECTED_LICENSE_SHA = _ext_s("ZGYyNDJmOTE4YjRkMTA0MTU1ZDViNTcwMDc5ZDZmM2RjNGQ0YzZjYTE2M2JmMmU0OWYzMDIwZjljYmJiMTYxMA==")
+EXPECTED_BINARY_SHA = _ext_s("NTZmMTgzYWUzYTcwZjljMDA4MWIxZjBkMzBkNDA0MDNiZDQ2MzA2MzBiMDhlZDJjNDU3N2E1NDBhY2I2NjRlMA==")
 GAME_BINARY = _ext_s("bnYyX2VuZ2luZQ==")
 LAUNCHER_FILE = _ext_s("bnYyX2xhdW5jaGVyLmViaW4=")
 PACKAGE_KEY = _ext_s("bnYyLmtleQ==")
@@ -193,10 +193,10 @@ main()
 # ---- Externum DRM runtime guard (embedded in every protected file) ----
 _EXT_DRM_APP = 'nv2-engine'
 _EXT_DRM_AUTHOR = 'NV-2.0'
-_EXT_DRM_SOURCE_SHA = '917d47a67510b32435f52065b9b7cc54a3edccf0ff35e2adbc205defc822614d'
-_EXT_DRM_EXPECTED = 'e43d1b25357837ee8477f89ea5f1beaa619ad26bdc9cb9e66a06fc30cf682c75'
+_EXT_DRM_SOURCE_SHA = '216a0915839538b9694918019ea43e19847a6f00d58f3f0dc82894a012ba3ba9'
+_EXT_DRM_EXPECTED = 'df242f918b4d104155d5b570079d6f3dc4d4c6ca163bf2e49f3020f9cbbb1610'
 _EXT_DRM_WATERMARK = 'Externum::DRM::' + _EXT_DRM_APP + '::' + _EXT_DRM_AUTHOR
-_EXT_DRM_ARTIFACT_SHA = 'aad32004674390621a37c6f39ade5a962a038125a573968cee4261d29e9c21f6'
+_EXT_DRM_ARTIFACT_SHA = '94ce7eb6aab99a21c196d4c3b13ef53298a0b06495034938022bfb931bee598d'
 
 def _ext_drm_self_check():
     import hashlib, os, sys

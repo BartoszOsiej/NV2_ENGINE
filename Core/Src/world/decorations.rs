@@ -18,7 +18,7 @@ impl DecorationInstance {
     pub fn randomize(&mut self, seed: u64) {
         let mut rng = seed;
         rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
-        self.rotation = ((rng % 1000) as f32 / 1000.0) * 6.28318;
+        self.rotation = ((rng % 1000) as f32 / 1000.0) * std::f32::consts::TAU;
         rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
         self.scale = 0.8 + ((rng % 400) as f32 / 1000.0);
     }

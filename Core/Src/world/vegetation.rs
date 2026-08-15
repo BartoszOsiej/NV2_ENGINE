@@ -127,12 +127,9 @@ impl VegetationGenerator {
         cx: i32,
         cz: i32,
     ) {
-        println!("[VEGO-START] Populating chunk ({}, {})", cx, cz);
         self.place_trees(world, generator, cx, cz);
-        println!("[VEGO-AI] Starting AI vegetation for chunk ({}, {})", cx, cz);
         // ── AI-driven vegetation generation ──────────────────────────────
         self.place_ai_vegetation(world, generator, cx, cz);
-        println!("[VEGO-END] Finished chunk ({}, {})", cx, cz);
     }
 
     fn place_trees(&self, world: &mut World, generator: &BiomeGenerator, cx: i32, cz: i32) {
@@ -210,19 +207,23 @@ impl VegetationGenerator {
         // Disabled - using AI vegetation instead
     }
 
-    /// AI-driven vegetation placement using neural network predictions
+    /// Ground-cover placement driven by the real climate/biome of each
+    /// column. The AI network only *prefers* a cover class (flower / fern /
+    /// stick); the biome + surface decide which classes are physically
+    /// plausible, so the world never gets random sticks/pebbles in the
+    /// middle of a desert or flowers on bare rock. Density is per-biome and
+    /// clustered by low-frequency noise so cover forms natural clumps.
     fn place_ai_vegetation(&self, world: &mut World, generator: &BiomeGenerator, cx: i32, cz: i32) {
         let world_seed = generator.seed() as i64;
-        let mut placed_count = 0;
-        let mut error_count = 0;
-
-        println!("[AI-VEGO-START] Chunk ({}, {})", cx, cz);
 
         for_each_chunk_cell(cx, cz, AI_VEGETATION_CELL_SIZE, world_seed, 4_001, |wx, wz| {
             let sample = generator.sample_column(wx, wz);
-            
-            // Skip if on water or not suitable surface
-            if sample.water_top != sample.surface || !supports_grass_surface(sample.surface_block) {
+
+            // Skip if on water, snow or other unsuitable surfaces.
+            if sample.water_top != sample.surface
+                || !(supports_grass_surface(sample.surface_block)
+                    || is_rocky_surface(sample.surface_block))
+            {
                 return;
             }
 
@@ -230,7 +231,30 @@ impl VegetationGenerator {
                 return;
             };
 
-            // ✅ AI FEATURES ✅
+            // Per-biome cover density (fraction of suitable columns).
+            let density = match sample.biome {
+                BiomeId::Plains => 0.10,
+                BiomeId::Forest => 0.16,
+                BiomeId::DarkForest => 0.13,
+                BiomeId::Swamp => 0.12,
+                BiomeId::Taiga => 0.07,
+                BiomeId::Mountains => 0.05,
+                _ => 0.0,
+            };
+            if density <= 0.0 {
+                return;
+            }
+
+            // Cluster noise: low-frequency field raises/lowers the local
+            // density so cover grows in natural clumps, never a uniform grid.
+            let cluster = noise2_01(world_seed.wrapping_add(4_031), wx, wz, 0.045);
+            let effective = density * (0.25 + 0.75 * cluster);
+            let local = noise2_01(world_seed.wrapping_add(9_999), wx, wz, 0.23);
+            if local > effective {
+                return;
+            }
+
+            // AI features (8 inputs, matching the trained model).
             let height_normalized = (surface_y as f32 / CHUNK_H as f32).min(1.0);
             let slope = slope_at(generator, wx, wz) as f32 / 10.0;
             let temperature = sample.temperature as f32;
@@ -238,44 +262,81 @@ impl VegetationGenerator {
             let water_dist = 0.5f32;
             let veg_count = 0.5f32;
             let light_level = 0.7f32;
-            let noise_seed = noise2_01(world_seed.wrapping_add(4_031), wx, wz, 0.47) as f32;
-            
+            let noise_seed = cluster as f32;
+
             let features = [
                 height_normalized, slope, temperature, humidity,
                 water_dist, veg_count, light_level, noise_seed,
             ];
-            
-            // ✅ GET AI PREDICTION ✅
-            let (block_type, confidence) = world.ai_system.predict_vegetation(&features);
-            
-            // ✅ SIMPLE PLACEMENT LOGIC ✅
-            if confidence > 0.40 && block_type != BlockType::Air {
-                let rand = noise2_01(world_seed.wrapping_add(9_999), wx, wz, 0.19);
-                if rand < 0.6 {
-                    // Place block directly in chunk (FAST & SAFE)
-                    let chunk_cx = (wx >> 4) as i32;
-                    let chunk_cz = (wz >> 4) as i32;
-                    
-                    if chunk_cx == cx && chunk_cz == cz {
-                        if let Some(chunk) = world.chunks.get_mut(&(cx, cz)) {
-                            let lx = (wx & 15) as usize;
-                            let lz = (wz & 15) as usize;
-                            let ly = (surface_y + 1) as usize;
-                            
-                            if ly < CHUNK_H {
-                                chunk.set(lx, ly, lz, block_type);
-                                placed_count += 1;
-                            }
-                        }
+
+            // The AI prefers a class; the biome + surface pick the real block.
+            let (ai_block, _confidence) = world.ai_system.predict_vegetation(&features);
+            let block = realistic_cover(sample.biome, sample.surface_block, ai_block, local);
+            if block == BlockType::Air {
+                return;
+            }
+
+            let chunk_cx = (wx >> 4) as i32;
+            let chunk_cz = (wz >> 4) as i32;
+            if chunk_cx == cx && chunk_cz == cz {
+                if let Some(chunk) = world.chunks.get_mut(&(cx, cz)) {
+                    let lx = (wx & 15) as usize;
+                    let lz = (wz & 15) as usize;
+                    let ly = (surface_y + 1) as usize;
+                    if ly < CHUNK_H {
+                        chunk.set(lx, ly, lz, block);
                     }
                 }
             }
         });
+    }
+}
 
-        if placed_count > 0 {
-            println!("[AI-VEGO-SUCCESS] Chunk ({}, {}): {} blocks", cx, cz, placed_count);
+/// True for rocky surfaces where pebbles/scree belong.
+fn is_rocky_surface(block: BlockType) -> bool {
+    matches!(
+        block,
+        BlockType::Stone
+            | BlockType::Andesite
+            | BlockType::Gravel
+            | BlockType::SlateRock
+            | BlockType::Tuff
+            | BlockType::Cobblestone
+            | BlockType::CobbleMoss
+    )
+}
+
+/// The physically plausible cover block for a (biome, surface) pair, given
+/// the AI's preference. Air means "nothing grows here".
+fn realistic_cover(biome: BiomeId, surface: BlockType, ai_block: BlockType, rand: f64) -> BlockType {
+    match biome {
+        // Rocky slopes: scree/pebbles, nothing else.
+        BiomeId::Mountains => {
+            if is_rocky_surface(surface) {
+                BlockType::Pebble1
+            } else {
+                BlockType::Air
+            }
         }
-        println!("[AI-VEGO-END] Chunk ({}, {})", cx, cz);
+        // Forests: undergrowth — ferns where the AI prefers, sticks near
+        // trunks elsewhere.
+        BiomeId::Forest | BiomeId::DarkForest | BiomeId::Taiga => {
+            if ai_block == BlockType::Fern && rand < 0.5 {
+                BlockType::Fern
+            } else {
+                BlockType::StickSmall
+            }
+        }
+        // Meadows and swamps: grass tufts and flowers, never sticks.
+        BiomeId::Plains | BiomeId::Swamp => {
+            if ai_block == BlockType::Rose && rand < 0.25 {
+                BlockType::Rose
+            } else {
+                BlockType::Fern
+            }
+        }
+        // Deserts get cactus/dead-bush only from the ground-cover pass.
+        _ => BlockType::Air,
     }
 }
 
@@ -838,7 +899,9 @@ mod tests {
         let mut tree_blocks = 0usize;
         let mut cover_blocks = 0usize;
 
-        for seed in [42_u32, 1_337_u32, 20_260_405_u32] {
+        // One seed per real climate zone: temperate forest, tropical
+        // rainforest and boreal taiga (see biomes::tests constants).
+        for seed in [627_736_576_u32, 2_411_746_645_u32, 330_416_127_u32] {
             let mut world = World::new_for_tests(seed);
             for cz in -4..=4 {
                 for cx in -4..=4 {

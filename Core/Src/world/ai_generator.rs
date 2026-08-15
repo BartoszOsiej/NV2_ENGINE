@@ -454,6 +454,16 @@ pub fn texture_style_for_name(name: &str) -> (TexturePalette, TexturePattern) {
             TexturePalette { c0: [160, 128, 86], c1: [178, 146, 100], c2: Some([134, 106, 70]), alpha: 255 },
             TexturePattern::Planks,
         )
+    } else if n.contains("deer_fur") {
+        (
+            TexturePalette { c0: [126, 96, 62], c1: [164, 132, 92], c2: Some([96, 70, 44]), alpha: 255 },
+            TexturePattern::Noise,
+        )
+    } else if n.contains("rabbit_fur") {
+        (
+            TexturePalette { c0: [198, 192, 178], c1: [224, 219, 206], c2: Some([166, 158, 142]), alpha: 255 },
+            TexturePattern::Noise,
+        )
     } else {
         (
             TexturePalette { c0: [132, 122, 108], c1: [150, 140, 124], c2: None, alpha: 255 },
@@ -1250,6 +1260,9 @@ impl AISystem {
     ) {
         let mut epoch = 0;
         let mut last_dataset_load: std::time::Instant = std::time::Instant::now();
+        // Checkpoints are for persistence, not per-minute — save at most
+        // once a minute so background training never spams the disk/logs.
+        let mut last_checkpoint: std::time::Instant = std::time::Instant::now();
 
         loop {
             epoch += 1;
@@ -1332,7 +1345,7 @@ impl AISystem {
             // Throttle diagnostics + progress messages: the receiver is never
             // drained, so an unbounded stream would grow forever, and console
             // output every epoch stalls the game on slow terminals.
-            if epoch % 20 == 0 {
+            if epoch % 100 == 0 {
                 if head_count > 0 {
                     let avg = head_loss / head_count as f32;
                     let stats = ai.lock().map(|m| (m.model_param_count(), m.model_version())).unwrap_or((0, 0));
@@ -1344,15 +1357,17 @@ impl AISystem {
                 let _ = tx.send(AIMessage::TrainingProgress { epoch, loss: avg_loss });
             }
 
-            if epoch % 20 == 0 {
-                if let Ok(model) = ai.lock() {
-                    if let Err(e) = model.save_checkpoint(checkpoint_path) {
-                        eprintln!("[AI] checkpoint save failed: {e}");
-                    } else {
-                        println!("[AI] checkpoint saved ({})", model.training_samples());
+            if epoch % 100 == 0 {
+                if last_checkpoint.elapsed() >= std::time::Duration::from_secs(60) {
+                    if let Ok(model) = ai.lock() {
+                        if let Err(e) = model.save_checkpoint(checkpoint_path) {
+                            eprintln!("[AI] checkpoint save failed: {e}");
+                        } else {
+                            println!("[AI] checkpoint saved ({})", model.training_samples());
+                        }
                     }
+                    last_checkpoint = std::time::Instant::now();
                 }
-                println!("[AI-EPOCH] {} completed | Avg Loss: {:.4} | samples: {}", epoch, avg_loss, trained);
             }
 
             // Cooldown every epoch: caps the loop at ~40 epochs/s so background

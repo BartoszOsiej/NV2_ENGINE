@@ -10,9 +10,22 @@ pub mod worldgen;
 pub mod ai_generator;
 pub mod ai_feedback;
 pub mod memplp;
+
+/// Which passive animal lives in a biome (None in deserts/tundra/ocean).
+fn animal_kind_for_biome(biome: biomes::BiomeId) -> Option<crate::gameplay::AnimalKind> {
+    match biome {
+        biomes::BiomeId::Plains | biomes::BiomeId::Coast => Some(crate::gameplay::AnimalKind::Rabbit),
+        biomes::BiomeId::Forest
+        | biomes::BiomeId::DarkForest
+        | biomes::BiomeId::Taiga
+        | biomes::BiomeId::Swamp
+        | biomes::BiomeId::Mountains => Some(crate::gameplay::AnimalKind::Deer),
+        _ => None,
+    }
+}
 pub mod decorations;pub mod decoration_ai;
 pub mod online_trainer;
-pub mod meteo;
+pub mod meteo;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -528,6 +541,69 @@ impl World {
         self.generator.get_biome(wx, wz)
     }
 
+    /// Find a flat, walkable land spot near (px, pz) and return the animal
+    /// kind that lives in that spot's biome — used by the wildlife system
+    /// to spawn visible fauna (rabbits on plains, deer in forests…).
+    pub fn find_animal_spawn(
+        &self,
+        px: f32,
+        pz: f32,
+        yaw: f32,
+    ) -> Option<(crate::gameplay::AnimalKind, (f32, f32, f32))> {
+        let seed = self.generator.seed();
+        // Spawn in a forward-facing cone so wildlife is actually visible:
+        // close ring first (in front of the camera), then a wider one.
+        let rings = [
+            (0usize, 12usize, 9.0f32, 16.0f32, 0.9f32),
+            (12, 30, 16.0, 32.0, 1.3),
+        ];
+        let mut debug_checked = 0usize;
+        let mut debug_biome_miss = 0usize;
+        let mut debug_water = 0usize;
+        let mut debug_surface = 0usize;
+        for (start, end, rad0, rad1, cone) in rings {
+            for i in start..end {
+                let h = (seed as u64)
+                    .wrapping_mul(0x9E37_79B1)
+                    .wrapping_add(i as u64 * 0x9E37_79B1)
+                    as f32;
+                // Bias towards the camera's facing direction, spread across
+                // a cone so several animals can stand in view at once.
+                let ang = yaw + (h.fract() * 2.0 - 1.0) * cone;
+                let rad = rad0 + (i as f32 * 3.7).fract() * (rad1 - rad0);
+                let wx = (px + ang.cos() * rad).round();
+                let wz = (pz + ang.sin() * rad).round();
+                debug_checked += 1;
+                let biome = self.biome_at(wx as i32, wz as i32);
+                let Some(kind) = animal_kind_for_biome(biome) else {
+                    debug_biome_miss += 1;
+                    continue;
+                };
+                let sample = self.generator.sample_column(wx as i32, wz as i32);
+                if sample.water_top != sample.surface {
+                    debug_water += 1;
+                    continue;
+                }
+                if !matches!(
+                    sample.surface_block,
+                    BlockType::Grass
+                        | BlockType::ForestFloor
+                        | BlockType::BloomFloor
+                        | BlockType::CoarseSoil
+                        | BlockType::RootedSoil
+                        | BlockType::MossMat
+                        | BlockType::Snow
+                ) {
+                    debug_surface += 1;
+                    continue;
+                }
+                return Some((kind, (wx, sample.surface as f32 + 1.0, wz)));
+            }
+        }
+        let _ = (debug_checked, debug_biome_miss, debug_water, debug_surface);
+        None
+    }
+
     /// Return the surface height (y) at world coordinates using the biome generator.
     pub fn surface_height(&self, wx: i32, wz: i32) -> u32 {
         self.generator.surface_height(wx, wz)
@@ -931,14 +1007,16 @@ mod tests {
     #[test]
     fn raycast_hits_first_solid_block_and_skips_foliage() {
         let mut world = World::new(9001);
-        world.set_block(0, 64, 1, BlockType::TreeLeaves);
-        world.set_block(0, 64, 2, BlockType::Stone);
+        // well above any generated terrain (worlds can reach y~120)
+        let y = 200i32;
+        world.set_block(0, y, 1, BlockType::TreeLeaves);
+        world.set_block(0, y, 2, BlockType::Stone);
 
         let hit = world
-            .raycast_block(Vector3::new(0.5, 64.5, 0.5), Vector3::new(0.0, 0.0, 1.0))
+            .raycast_block(Vector3::new(0.5, y as f32 + 0.5, 0.5), Vector3::new(0.0, 0.0, 1.0))
             .expect("expected raycast to hit the first solid block");
 
-        assert_eq!(hit.block_pos, Vector3::new(0, 64, 2));
+        assert_eq!(hit.block_pos, Vector3::new(0, y, 2));
         assert_eq!(hit.face_normal, Vector3::new(0, 0, -1));
         assert_eq!(hit.block_type, BlockType::Stone);
     }

@@ -3,6 +3,42 @@ use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::{CursorGrabMode, Window}};
 
+/// Maximum number of live weather particles (rain streaks / snow flakes).
+const MAX_WEATHER_PARTICLES: usize = 2048;
+/// Maximum number of animal cubes drawn (animals × body parts).
+const MAX_ANIMAL_CUBES: usize = 256;
+
+/// Unit cube centred at origin, 36 vertices (position xyz + normal xyz).
+fn build_unit_cube() -> Vec<[f32; 8]> {
+    let mut out = Vec::with_capacity(36);
+    // face: (normal, two tangent axes offsets)
+    let faces: [([f32; 3], [f32; 3], [f32; 3]); 6] = [
+        ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        ([0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+        ([-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+        ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ([0.0, 0.0, -1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    ];
+    for (n, u, v) in faces {
+        let corners = [
+            [u[0] - v[0], u[1] - v[1], u[2] - v[2]],
+            [u[0] + v[0], u[1] + v[1], u[2] + v[2]],
+            [-u[0] - v[0], -u[1] - v[1], -u[2] - v[2]],
+            [-u[0] + v[0], -u[1] + v[1], -u[2] + v[2]],
+        ];
+        let tri = [0, 1, 2, 1, 3, 2];
+        for &i in &tri {
+            let c = corners[i];
+            // uv across the face: (dot(c, u) + 1) / 2, (dot(c, v) + 1) / 2
+            let uv0 = (c[0] * u[0] + c[1] * u[1] + c[2] * u[2] + 1.0) * 0.5;
+            let uv1 = (c[0] * v[0] + c[1] * v[1] + c[2] * v[2] + 1.0) * 0.5;
+            out.push([c[0] * 0.5, c[1] * 0.5, c[2] * 0.5, n[0], n[1], n[2], uv0, uv1]);
+        }
+    }
+    out
+}
+
 use crate::{
     assets,
     inventory::{HOTBAR_START, INVENTORY_SLOT_COUNT},
@@ -41,10 +77,66 @@ pub struct BiomeUniform {
     pub fog_color:  [f32; 4],
     /// xyz = scene grade, w = water animation time
     pub grade:      [f32; 4],
+    /// xyz = regional sky/fog tint from the real climate, w unused
+    pub atmosphere: [f32; 4],
     /// x = day brightness, y = fog start, z = fog end, w = sun phase
     pub view_info:  [f32; 4],
     /// xyz = camera eye world-space position, w = sea level
     pub camera_pos: [f32; 4],
+}
+
+/// Fullscreen sky pass uniform — camera basis + climate atmosphere.
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SkyUniform {
+    pub right: [f32; 4],
+    pub up: [f32; 4],
+    pub forward: [f32; 4],
+    /// x = tan(fov/2), y = aspect, z = time, w = day brightness
+    pub view: [f32; 4],
+    /// x = sun_phase, y = cloud_cover, z = weather kind, w = intensity
+    pub climate: [f32; 4],
+    pub atmosphere: [f32; 4],
+}
+
+/// Weather particle uniform — eye, camera basis, time/kind/intensity/wind.
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct WeatherUniform {
+    pub camera: [f32; 4],
+    pub right: [f32; 4],
+    pub up: [f32; 4],
+    /// x = time, y = intensity, z = kind (0 none, 1 rain, 2 snow), w = wind
+    pub params: [f32; 4],
+}
+
+/// One rain streak or snow flake (storage buffer, updated on CPU each frame).
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct WeatherParticle {
+    pub pos: [f32; 3],
+    pub _pad0: f32,
+    pub vel: [f32; 3],
+    pub _pad1: f32,
+    pub size: [f32; 2],
+    pub phase: f32,
+    pub _pad: f32,
+}
+
+/// One cube of a voxel animal (body, head, leg…).
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct AnimalInstance {
+    pub pos: [f32; 3],
+    pub _pad0: f32,
+    pub size: [f32; 3],
+    pub _pad1: f32,
+    pub color: [f32; 3],
+    pub _pad2: f32,
+    pub rot: f32,
+    pub _pad3: f32,
+    /// Base UV of the fur tile in the atlas (u0, v0).
+    pub uv: [f32; 2],
 }
 
 #[repr(C)]
@@ -200,6 +292,31 @@ pub struct State {
     pub ambient_darkness: f32,
     /// NV2.0: 0..1 cloud cover from the world's NASA POWER climate.
     pub cloud_cover: f32,
+    /// NV2.0: regional sky/fog tint from the real climate (desert haze,
+    /// rainforest teal, boreal steel…).
+    pub atmosphere: [f32; 3],
+    /// NV2.0: live weather — 0 none, 1 rain, 2 snow + intensity 0..1 + wind.
+    pub weather_kind: f32,
+    pub weather_intensity: f32,
+    pub weather_wind: f32,
+    /// NV2.0: day phase 0..1 from the game clock (0 = 06:00). The sky, sun
+    /// and terrain lighting follow the game's clock, not the renderer timer.
+    pub day_fraction: f32,
+    sky_buffer: wgpu::Buffer,
+    sky_bind_group: wgpu::BindGroup,
+    sky_pipeline: wgpu::RenderPipeline,
+    weather_buffer: wgpu::Buffer,
+    weather_bind_group: wgpu::BindGroup,
+    weather_storage: wgpu::Buffer,
+    weather_pipeline: wgpu::RenderPipeline,
+    weather_particles: Vec<WeatherParticle>,
+    weather_count: usize,
+    animal_pipeline: wgpu::RenderPipeline,
+    animal_bind_group: wgpu::BindGroup,
+    animal_storage: wgpu::Buffer,
+    animal_vertex_buffer: wgpu::Buffer,
+    animal_count: usize,
+    pub animal_instances: Vec<AnimalInstance>,
     /// Monotonically increasing session time (seconds). Drives day/night + water anim.
     elapsed_time: f32,
 
@@ -677,6 +794,7 @@ impl State {
             ambient: [1.0, 1.0, 1.0, 1.0],
             fog_color: [0.56, 0.72, 0.92, 1.0],
             grade: [1.0, 1.0, 1.0, 0.0],
+            atmosphere: [0.56, 0.72, 0.92, 1.0],
             view_info: [1.0, 48.0, 84.0, 0.0],
             camera_pos: [0.0, 80.0, 0.0, SEA_LEVEL as f32],
         };
@@ -776,6 +894,298 @@ impl State {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
+
+        // ── Fullscreen sky pass (sun, moon, stars, climate clouds) ────────
+        let sky_shader = device.create_shader_module(wgpu::include_wgsl!("sky.wgsl"));
+        let sky_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sky layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let sky_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sky Buffer"),
+            contents: bytemuck::cast_slice(&[SkyUniform {
+                right: [1.0, 0.0, 0.0, 0.0],
+                up: [0.0, 1.0, 0.0, 0.0],
+                forward: [0.0, 0.0, -1.0, 0.0],
+                view: [1.0, 1.0, 0.0, 1.0],
+                climate: [0.0, 0.0, 0.0, 0.0],
+                atmosphere: [0.56, 0.72, 0.92, 1.0],
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let sky_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky bind group"),
+            layout: &sky_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: sky_buffer.as_entire_binding(),
+            }],
+        });
+        let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sky pipeline layout"),
+            bind_group_layouts: &[&sky_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sky pipeline"),
+            layout: Some(&sky_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &sky_shader,
+                entry_point: "vs_main",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &sky_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        // ── Weather particles (rain / snow) ────────────────────────────────
+        let weather_shader = device.create_shader_module(wgpu::include_wgsl!("weather.wgsl"));
+        let weather_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("weather layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let weather_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Weather Buffer"),
+            contents: bytemuck::cast_slice(&[WeatherUniform {
+                camera: [0.0, 80.0, 0.0, 0.0],
+                right: [1.0, 0.0, 0.0, 0.0],
+                up: [0.0, 1.0, 0.0, 0.0],
+                params: [0.0, 0.0, 0.0, 0.0],
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let weather_storage = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Weather Particles"),
+            size: (MAX_WEATHER_PARTICLES * std::mem::size_of::<WeatherParticle>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let weather_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("weather bind group"),
+            layout: &weather_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: weather_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: weather_storage.as_entire_binding(),
+                },
+            ],
+        });
+        let weather_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("weather pipeline layout"),
+            bind_group_layouts: &[&camera_bind_group_layout, &weather_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let weather_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("weather pipeline"),
+            layout: Some(&weather_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &weather_shader,
+                entry_point: "vs_main",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &weather_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent::OVER,
+                        alpha: wgpu::BlendComponent::OVER,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        // ── Voxel animals (instanced cubes) ────────────────────────────────
+        let animals_shader = device.create_shader_module(wgpu::include_wgsl!("animals.wgsl"));
+        let animals_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("animals layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let animal_storage = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Animal Instances"),
+            size: (MAX_ANIMAL_CUBES * std::mem::size_of::<AnimalInstance>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let animal_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("animals bind group"),
+            layout: &animals_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: animal_storage.as_entire_binding(),
+            }],
+        });
+        let animals_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("animals pipeline layout"),
+            bind_group_layouts: &[
+                &camera_bind_group_layout,
+                &animals_bind_group_layout,
+                &texture_bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+        // Unit cube (36 verts, position + normal + uv) — the animal body parts.
+        let cube_vertices: Vec<[f32; 8]> = build_unit_cube();
+        let animal_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Animal Cube"),
+            contents: bytemuck::cast_slice(&cube_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let animal_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("animals pipeline"),
+            layout: Some(&animals_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &animals_shader,
+                entry_point: "vs_main",
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                    ],
+                }],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &animals_shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        // Pre-fill the weather particle pool (deterministic scatter).
+        let mut weather_particles = Vec::with_capacity(MAX_WEATHER_PARTICLES);
+        for i in 0..MAX_WEATHER_PARTICLES {
+            let rx = (i as f32 * 12.9898).fract();
+            let ry = (i as f32 * 78.233).fract();
+            let rz = (i as f32 * 37.719).fract();
+            weather_particles.push(WeatherParticle {
+                pos: [(rx * 2.0 - 1.0) * 16.0, 70.0 + ry * 20.0, (rz * 2.0 - 1.0) * 16.0],
+                _pad0: 0.0,
+                vel: [0.0, -26.0, 0.0],
+                _pad1: 0.0,
+                size: [0.16, 0.55],
+                phase: rx * std::f32::consts::TAU,
+                _pad: 0.0,
+            });
+        }
 
         let ui_shader = device.create_shader_module(wgpu::include_wgsl!("ui.wgsl"));
         let ui_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -930,6 +1340,26 @@ impl State {
             hud_line: String::new(),
             ambient_darkness: 0.0,
             cloud_cover: 0.0,
+            atmosphere: [0.56, 0.72, 0.92],
+            weather_kind: 0.0,
+            weather_intensity: 0.0,
+            weather_wind: 0.0,
+            sky_buffer,
+            sky_bind_group,
+            sky_pipeline,
+            weather_buffer,
+            weather_bind_group,
+            weather_storage,
+            weather_pipeline,
+            weather_particles,
+            weather_count: 0,
+            animal_pipeline,
+            animal_bind_group,
+            animal_storage,
+            animal_vertex_buffer,
+            animal_count: 0,
+            animal_instances: Vec::new(),
+            day_fraction: 0.0,
             elapsed_time: 0.0,
             text_renderer,
             menu_renderer: MenuRenderer::new(),
@@ -1000,10 +1430,10 @@ impl State {
     }
 
     fn ui_clear_color(mode: UiMode, elapsed: f32, ambient_darkness: f32,
-                      cloud_cover: f32) -> wgpu::Color {
+                      cloud_cover: f32, atmosphere: [f32; 3]) -> wgpu::Color {
         match mode {
             UiMode::None => {
-                let mut c = Self::sky_color_for_time(elapsed);
+                let mut c = Self::sky_color_for_time(elapsed, atmosphere);
                 // NV2.0: blend the gameplay night cycle into the sky.
                 let d = ambient_darkness.clamp(0.0, 1.0) as f64;
                 c.r *= 1.0 - d * 0.75;
@@ -1154,13 +1584,14 @@ impl State {
 
     /// Clear-color sky that matches the WGSL `sky_color(day, sun_phase)` function.
     /// Uses the same palette and blend math so the background seamlessly continues the fog.
-    fn sky_color_for_time(t: f32) -> wgpu::Color {
+    fn sky_color_for_time(t: f32, atmosphere: [f32; 3]) -> wgpu::Color {
         use std::f32::consts::TAU;
         let phase    = (t / 1200.0).fract();
         let day      = Self::day_brightness(t);
         let sun_elev = ((phase - 0.25) * TAU).sin();
 
-        // Match shader sky_color() palette exactly
+        // Match shader sky_color() palette exactly, then apply the regional
+        // climate atmosphere tint (desert haze, rainforest teal, …).
         let ch = |night: f32, zenith: f32, haze: f32, sunset: f32, twi: f32| -> f64 {
             let day_sky       = haze  + (zenith - haze)  * (day * 0.90).min(1.0);
             let base          = night + (day_sky - night) * (day * 1.20).min(1.0);
@@ -1169,18 +1600,29 @@ impl State {
             (base + (sunset_col - base) * sunset_str * (day * 4.0).min(0.78)).clamp(0.0, 1.0) as f64
         };
 
-        wgpu::Color {
+        let mut c = wgpu::Color {
             r: ch(0.006, 0.270, 0.560, 1.000, 0.560),
             g: ch(0.010, 0.520, 0.720, 0.340, 0.220),
             b: ch(0.048, 0.860, 0.920, 0.018, 0.460),
             a: 1.0,
-        }
+        };
+        let tint = 0.42 * day as f64; // stronger climate tint in full daylight
+        c.r = (c.r * (1.0 - tint) + atmosphere[0] as f64 * tint).clamp(0.0, 1.0);
+        c.g = (c.g * (1.0 - tint) + atmosphere[1] as f64 * tint).clamp(0.0, 1.0);
+        c.b = (c.b * (1.0 - tint) + atmosphere[2] as f64 * tint).clamp(0.0, 1.0);
+        c
     }
 
     /// Day brightness: 0.15 at midnight, 1.0 at noon (drives shader diffuse/ambient).
     fn day_brightness(t: f32) -> f32 {
-        use std::f32::consts::TAU;
         let phase = (t / 1200.0).fract();
+        Self::day_brightness_from_phase(phase)
+    }
+
+    /// Day brightness 0.15 (midnight) .. 1.0 (noon) for a sun phase where
+    /// 0.25 = sunrise, 0.5 = noon, 0.75 = sunset.
+    fn day_brightness_from_phase(phase: f32) -> f32 {
+        use std::f32::consts::TAU;
         let v = ((phase * TAU - std::f32::consts::FRAC_PI_2).sin() * 0.5 + 0.5).max(0.0);
         0.15 + 0.85 * v.sqrt()
     }
@@ -1260,7 +1702,9 @@ impl State {
         let visuals = world.visuals_at(cam_x, cam_z);
         self.elapsed_time += dt;
         let water_time  = self.elapsed_time * 0.55;
-        let day_bright  = Self::day_brightness(self.elapsed_time);
+        // Sky/sun/lighting follow the game clock (0 = 06:00 → phase 0.25).
+        let sun_phase   = (self.day_fraction + 0.25).fract();
+        let day_bright  = Self::day_brightness_from_phase(sun_phase);
         let fog_density = (visuals.fog_density.max(0.75) * performance_profile.fog_density_multiplier)
             .clamp(0.75, 2.25);
         // Keep distance ranges stable here; density is applied once in the shader to avoid horizon bands.
@@ -1268,15 +1712,104 @@ impl State {
         let fog_end =
             (performance_profile.render_radius as f32 * 22.0).clamp(fog_start + 18.0, 120.0);
         let eye       = self.camera.position;
-        let sun_phase = (self.elapsed_time / 1200.0).fract();
+        self.atmosphere = visuals.atmosphere;
         let biome_uniform = BiomeUniform {
             ambient: visuals.ambient,
             fog_color: [visuals.fog_color[0], visuals.fog_color[1], visuals.fog_color[2], fog_density],
             grade: [visuals.grade[0], visuals.grade[1], visuals.grade[2], water_time],
+            atmosphere: [visuals.atmosphere[0], visuals.atmosphere[1], visuals.atmosphere[2], 1.0],
             view_info: [day_bright, fog_start, fog_end, sun_phase],
             camera_pos: [eye.x, eye.y, eye.z, SEA_LEVEL as f32],
         };
         self.queue.write_buffer(&self.biome_buffer, 0, bytemuck::cast_slice(&[biome_uniform]));
+
+        // ── Sky pass uniform: camera basis + climate atmosphere ─────────────
+        let fwd = self.camera.look_direction();
+        let up = cgmath::Vector3::unit_y();
+        let right = fwd.cross(up);
+        let aspect = self.config.width as f32 / self.config.height as f32;
+        self.queue.write_buffer(
+            &self.sky_buffer,
+            0,
+            bytemuck::cast_slice(&[SkyUniform {
+                right: [right.x, right.y, right.z, 0.0],
+                up: [up.x, up.y, up.z, 0.0],
+                forward: [fwd.x, fwd.y, fwd.z, 0.0],
+                view: [1.0, aspect, self.elapsed_time, day_bright],
+                climate: [sun_phase, self.cloud_cover, self.weather_kind, self.weather_intensity],
+                atmosphere: [self.atmosphere[0], self.atmosphere[1], self.atmosphere[2], 1.0],
+            }]),
+        );
+
+        // ── Weather particles: update, then upload ──────────────────────────
+        let kind = self.weather_kind;
+        let intensity = self.weather_intensity;
+        let count = if kind > 0.5 && intensity > 0.01 {
+            let base = if kind < 1.5 { 1100.0 } else { 600.0 };
+            ((base * intensity) as usize).clamp(1, MAX_WEATHER_PARTICLES)
+        } else {
+            0
+        };
+        self.weather_count = count;
+        if count > 0 {
+            let box_half = 16.0f32;
+            let top = eye.y + 15.0;
+            let bottom = eye.y - 9.0;
+            let wind = self.weather_wind;
+            let step_dt = dt.min(0.05);
+            for i in 0..count {
+                let p = &mut self.weather_particles[i];
+                p.pos[0] += p.vel[0] * step_dt;
+                p.pos[1] += p.vel[1] * step_dt;
+                p.pos[2] += p.vel[2] * step_dt;
+                if kind >= 1.5 {
+                    // snow drifts sideways
+                    let t = self.elapsed_time;
+                    p.pos[0] += (t * 0.8 + p.phase).sin() * 0.5 * step_dt;
+                    p.pos[2] += (t * 0.6 + p.phase * 1.7).cos() * 0.5 * step_dt;
+                }
+                let out_of_box = p.pos[1] < bottom
+                    || p.pos[1] > top + 6.0
+                    || (p.pos[0] - eye.x).abs() > box_half + 24.0
+                    || (p.pos[2] - eye.z).abs() > box_half + 24.0;
+                if out_of_box {
+                    let rx = (i as f32 * 12.9898).fract();
+                    let rz = (i as f32 * 78.233).fract();
+                    p.pos[0] = eye.x + (rx * 2.0 - 1.0) * box_half;
+                    p.pos[2] = eye.z + (rz * 2.0 - 1.0) * box_half;
+                    p.pos[1] = top;
+                    p.vel[0] = wind * 0.6;
+                    p.vel[2] = wind * 0.25;
+                    p.vel[1] = if kind < 1.5 { -26.0 } else { -1.6 };
+                }
+            }
+            self.queue.write_buffer(
+                &self.weather_storage,
+                0,
+                bytemuck::cast_slice(&self.weather_particles[..count]),
+            );
+        }
+        self.queue.write_buffer(
+            &self.weather_buffer,
+            0,
+            bytemuck::cast_slice(&[WeatherUniform {
+                camera: [eye.x, eye.y, eye.z, 0.0],
+                right: [right.x, right.y, right.z, 0.0],
+                up: [up.x, up.y, up.z, 0.0],
+                params: [self.elapsed_time, intensity, kind, self.weather_wind],
+            }]),
+        );
+
+        // ── Animals: upload instance cubes ──────────────────────────────────
+        let animal_count = self.animal_instances.len().min(MAX_ANIMAL_CUBES);
+        self.animal_count = animal_count;
+        if animal_count > 0 {
+            self.queue.write_buffer(
+                &self.animal_storage,
+                0,
+                bytemuck::cast_slice(&self.animal_instances[..animal_count]),
+            );
+        }
 
         // Water simulation — throttled to 0.3 s intervals for responsive flow.
         // The new simulate_step() scales well with the increased MAX_CHANGES_PER_STEP.
@@ -1440,11 +1973,11 @@ impl State {
             self.needs_water_combine = true;
         }
 
-        // ── Step 2: GPU buffer upload — debounced to ≤10 Hz ──────────────────
-        // Multiple chunk arrivals within a 100ms window are batched into ONE upload,
+        // ── Step 2: GPU buffer upload — debounced to ≤6.7 Hz ──────────────────
+        // Multiple chunk arrivals within a 150ms window are batched into ONE upload,
         // eliminating the per-chunk GPU-alloc spikes that caused the FPS drops.
         self.mesh_rebuild_timer += dt;
-        if self.needs_gpu_upload && self.mesh_rebuild_timer >= 0.1 {
+        if self.needs_gpu_upload && self.mesh_rebuild_timer >= 0.15 {
             self.mesh_rebuild_timer = 0.0;
             self.needs_gpu_upload = false;
 
@@ -1533,7 +2066,7 @@ impl State {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let clear_color =
-            Self::ui_clear_color(mode, self.elapsed_time, self.ambient_darkness, self.cloud_cover);
+            Self::ui_clear_color(mode, self.elapsed_time, self.ambient_darkness, self.cloud_cover, self.atmosphere);
         let screen_size = (self.config.width, self.config.height);
         let gui_type = if mode == UiMode::None {
             self.interaction.gui_type()
@@ -2101,6 +2634,11 @@ impl State {
             });
 
             if mode == UiMode::None {
+                // Fullscreen sky first (sun, moon, stars, climate clouds).
+                rpass.set_pipeline(&self.sky_pipeline);
+                rpass.set_bind_group(0, &self.sky_bind_group, &[]);
+                rpass.draw(0..3, 0..1);
+
                 rpass.set_pipeline(&self.render_pipeline);
                 rpass.set_bind_group(0, &self.camera_bind_group, &[]);
                 rpass.set_bind_group(1, &self.material_bind_group, &[]);
@@ -2127,6 +2665,25 @@ impl State {
                     if self.num_water_indices > 0 {
                         rpass.draw_indexed(0..self.num_water_indices, 0, 0..1);
                     }
+                }
+
+                // Voxel wildlife standing on the terrain.
+                if self.animal_count > 0 {
+                    rpass.set_pipeline(&self.animal_pipeline);
+                    rpass.set_bind_group(0, &self.camera_bind_group, &[]);
+                    rpass.set_bind_group(1, &self.animal_bind_group, &[]);
+                    rpass.set_bind_group(2, &self.texture_bind_group, &[]);
+                    rpass.set_vertex_buffer(0, self.animal_vertex_buffer.slice(..));
+                    rpass.draw(0..36, 0..self.animal_count as u32);
+                }
+
+                // Live weather: rain streaks / snow flakes in front of the
+                // world, hidden correctly behind terrain via depth testing.
+                if self.weather_count > 0 {
+                    rpass.set_pipeline(&self.weather_pipeline);
+                    rpass.set_bind_group(0, &self.camera_bind_group, &[]);
+                    rpass.set_bind_group(1, &self.weather_bind_group, &[]);
+                    rpass.draw(0..4, 0..self.weather_count as u32);
                 }
             }
 

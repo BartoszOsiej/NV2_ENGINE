@@ -23,6 +23,8 @@ serde      = { version = "1", features = ["derive"] }
 rayon      = "1"
 num_cpus   = "1"
 fontdue    = "0.7"
+libloading = "0.8"
+# ── EGS / Epic Online Services (dynamic SDK load — no build-time dep) ──
 # ── AI/ML Dependencies ───────────────────────────────────────────────────
 ndarray    = { version = "0.15", features = ["serde"] }
 rand       = "0.8"
