@@ -1,3 +1,7 @@
+# platform
+.DS_Store
+*.log
+
 # Rust build artifacts
 /Core/target/
 target/
