@@ -1,4 +1,7 @@
 [package]
+description = "Native voxel game engine in Rust — wgpu renderer, procedural terrain, embedded neural networks, multiplayer"
+license = "MIT"
+repository = "https://github.com/BartoszOsiej/NV2_ENGINE"
 name    = "nv2_engine"
 version = "0.1.0"
 edition = "2021"
