@@ -20,7 +20,7 @@ jobs:
   build-windows:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: NV2_ENGINE
 
@@ -42,7 +42,7 @@ jobs:
           cargo build --release --target x86_64-pc-windows-gnu
 
       - name: Checkout Externum (for DRM + manifest tooling)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: externum
           repository: ${{ github.repository_owner }}/externum
