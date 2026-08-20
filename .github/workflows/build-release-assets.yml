@@ -14,8 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install stable
-      - run: cargo build --release
-      - uses: softprops/action-gh-release@v2
+      - run: cd Core \&\& cargo build --release
+      - name: Attach binaries
+        uses: softprops/action-gh-release@v2
         with:
-          files: target/release/*
+          files: target/release/nv2_engine
           generate_release_notes: true
