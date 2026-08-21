@@ -19,23 +19,23 @@ jobs:
         run: cargo build --release
 
       - name: Generate build provenance (SLSA v1 attestation)
+        id: attest
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: |
             Core/target/release/nv2_engine
-          bundle-path: provenance.jsonl
       - name: Generate SBOM (SPDX)
-        id: sbom
-        uses: anchore/sbom-action@v0
-        with:
-          format: spdx-json
-          upload-artifact: false
+        run: |
+          curl -sSfL "https://raw.githubusercontent.com/anchore/syft/main/install.sh" | sh -s -- -b /usr/local/bin v1.19.0
+          syft scan dir:. -o spdx-json > sbom.spdx.json
       - name: Attach supply-chain artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
-          gh release upload "${{ github.ref_name }}" \
-            provenance.jsonl "${{ steps.sbom.outputs.file }}" --clobber
+          FILES="sbom.spdx.json"
+          if [ -n "$BUNDLE" ] && [ -f "$BUNDLE" ]; then FILES="$FILES $BUNDLE"; fi
+          gh release upload "${{ github.ref_name }}" $FILES --clobber
       - name: Attach artifacts
         uses: softprops/action-gh-release@v2
         with:
