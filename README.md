@@ -1,24 +1,20 @@
-# 🎮 NV_ENGINE
+<img src="https://capsule-render.vercel.app/api?type=slice&color=0:7f5af0,50:2cb67d,100:16161a&height=140&section=header&text=NV2%20ENGINE&fontSize=38&fontColor=fff&desc=voxel%20engine%20%C2%B7%20neural%20terrain%20%C2%B7%20Rust%20%C2%B7%20wgpu&descSize=15&descAlignY=72" width="100%" />
+
+<div align="center">
+
+[![crates.io](https://img.shields.io/crates/v/nv2_engine?style=for-the-badge&logo=rust&label=nv2_engine)](https://crates.io/crates/nv2_engine)
+[![GHCR](https://img.shields.io/badge/GHCR-image-2496ED?style=for-the-badge&logo=docker)](https://github.com/BartoszOsiej/NV2_ENGINE/pkgs/container/nv2_engine)
+[![Release](https://img.shields.io/badge/release-binary-8A2BE2?style=for-the-badge&logo=github)](https://github.com/BartoszOsiej/NV2_ENGINE/releases)
+[![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 
 **A native desktop voxel engine with AI-powered terrain generation.**
 
-NV_ENGINE is a from-scratch voxel engine written in Rust — real-time world
-rendering, procedural terrain generation, interaction, inventory/crafting
-gameplay, and supporting content-pipeline tools. Beyond the terrain prototype,
-the repo contains a working gameplay loop: menus, commands, save/load, item
-handling, block interaction, world simulation, and GPU-driven rendering.
+</div>
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  NV_ENGINE                                                   │
-│  ├── Core/        Rust runtime — engine, gameplay, renderer, │
-│  │                world simulation, UI logic (wgpu, winit)   │
-│  ├── Bridge/      .NET 8 content tools — atlas slicing and   │
-│  │                asset preparation                           │
-│  ├── Assets/      Resources and packaging                    │
-│  └── VulkanLayers/ Supporting Vulkan layers                  │
-└─────────────────────────────────────────────────────────────┘
-```
+NV2 is a from-scratch voxel engine in Rust — real-time world rendering,
+procedural terrain generation, interaction, inventory/crafting gameplay and
+content-pipeline tools. A working gameplay loop: menus, commands, save/load,
+item handling, block interaction, world simulation, GPU-driven rendering.
 
 ## Quick start
 
@@ -34,20 +30,16 @@ What you'll see:
 - Flowers, ferns, pebbles placed intelligently by the neural network
 - The AI learns in the background (no FPS impact)
 
-## 🤖 AI — MeMLP (Modular embedded Multi-layer Perceptron Model)
+## 🤖 MeMLP — the neural network inside the engine
 
-The entire AI stack runs on **MeMLP** — a modular, embedded neural network
-that lives inside the engine (pure CPU, JSON checkpoints, no cloud, no GPU):
+The entire AI stack runs on **MeMLP** — a modular embedded neural network
+living inside the engine (pure CPU, JSON checkpoints, no cloud, no GPU):
 
-```
-Input: 8 terrain features (height, slope, biome temperature, humidity,
-       water distance, nearby vegetation, light, noise)
-    ↓
-Vegetation head (deep MLP 8 → 24 → 16 → 4, ReLU + softmax)
-    ↓
-Softmax (4 outputs: flower / fern / stick / pebble)
-    ↓
-Placement gated by confidence + biome-aware decorations (biome head)
+```mermaid
+flowchart TD
+    I["8 terrain features<br/>height / slope / temp / humidity<br/>water distance / vegetation / light / noise"] --> V["vegetation head<br/>MLP 8 to 24 to 16 to 4<br/>ReLU + softmax"]
+    V --> S["softmax<br/>flower / fern / stick / pebble"]
+    S --> P["placement gated by confidence<br/>+ biome-aware decorations"]
 ```
 
 Modules — one checkpoint file, implemented in `Core/Src/world/memplp.rs`:
@@ -58,28 +50,25 @@ Modules — one checkpoint file, implemented in `Core/Src/world/memplp.rs`:
 | `biome` | 8 → 12 → 9 | biome classification (9 biomes, drives decorations) |
 | `texture` | 8 → 12 → 6 | procedural texture-style selection |
 
-- **22 new vegetation types** — roses, tulips, daisies, water plants, moss,
-  sticks, pebbles and more
-- **Learns from the player** — placing/breaking vegetation is recorded as
-  training feedback (`Core/Src/world/ai_feedback.rs`)
-- **Online learning** — real-world climate data (Open-Meteo) merged into
-  training with a graceful offline fallback
-- **Backward compatible** — old single-hidden-layer checkpoints are
-  detected and migrated automatically on load
-- **Tiny footprint** — ~1 KB checkpoint, ~0.3 µs per prediction, millions of
-  training samples/s on the background thread (see `TEST_REPORT.md`)
+> [!TIP]
+> **~1 KB checkpoint · ~0.3 µs per prediction · millions of training samples/s**
+> on the background thread. Reproduce with:
+> `cargo test --release qa_benchmark_report -- --ignored --nocapture`
 
-> Reproducibility: `cargo test --release qa_benchmark_report -- --ignored --nocapture`
-> re-runs the full MeMLP benchmark.
+- **22 vegetation types** — roses, tulips, daisies, water plants, moss, sticks, pebbles…
+- **Learns from the player** — placing/breaking vegetation is recorded as training feedback (`Core/Src/world/ai_feedback.rs`)
+- **Online learning** — real-world climate data (Open-Meteo) merged into training, graceful offline fallback
+- **Backward compatible** — old single-hidden-layer checkpoints migrate automatically on load
 
-## 🧱 Gameplay
+<details>
+<summary><b>🧱 Gameplay & NV2.0 release-state mechanics</b></summary>
 
 - Block interaction (place / mine)
 - Inventory and crafting (3×3 grid, NVCrafter)
 - Commands, menus, save / load
 - Chunk-based world simulation
 
-### NV2.0 release-state mechanics (2026-08-14)
+**Survival systems (2026-08-14):**
 
 - **Day/night cycle** — 10-minute days, wall-clock HUD, night darkens the sky
 - **Health & hunger** — decay, regen, starvation, death + respawn at dawn
@@ -88,29 +77,20 @@ Modules — one checkpoint file, implemented in `Core/Src/world/memplp.rs`:
 - **Progression** — achievements (`/achievements`) for surviving nights, kills…
 - **HUD** — `☀ 14:00 | ♥ 20/20 | 🍗 100/100 | ☠ 0`
 
-New commands: `/time`, `/day`, `/night`, `/eat`, `/heal`, `/attack`, `/tools`,
-`/repair`, `/achievements`, `/stats`.
+Commands: `/time`, `/day`, `/night`, `/eat`, `/heal`, `/attack`, `/tools`, `/repair`, `/achievements`, `/stats`.
 
-> ⚠️ **Assets:** the repository previously shipped ~3 700 Mojang/Minecraft
-> texture/model/recipe files. They were removed and replaced with the
-> engine's deterministic procedural texture generator — see
-> [`ASSET_AUDIT.md`](ASSET_AUDIT.md) and [`ATTRIBUTION.md`](ATTRIBUTION.md).
+</details>
 
-## 🤖 NV2.0 Phase-2 features
+<details>
+<summary><b>🤖 Phase-2 features</b></summary>
 
-- **Community model sharing** — `/ai_export <path> [author]` writes a
-  portable `nv2-model-bundle` (checkpoint + author/description/biome
-  metadata); `/ai_import <path>` loads any shared bundle and persists it.
-- **Training datasets** — `/ai_dataset <path> [epochs]` trains the
-  vegetation head on a JSON dataset (`samples` + `targets`) with full
-  validation.
-- **Player-preference learning** — the model tracks which vegetation the
-  player likes placing (counters live in the checkpoint) and blends its
-  training targets toward that taste; `/ai_stats` shows live stats and
-  preferences.
+- **Community model sharing** — `/ai_export <path> [author]` writes a portable `nv2-model-bundle`; `/ai_import <path>` loads any shared bundle
+- **Training datasets** — `/ai_dataset <path> [epochs]` trains the vegetation head on JSON datasets with full validation
+- **Player-preference learning** — the model tracks which vegetation you like placing and blends training targets toward that taste; `/ai_stats` shows live stats
 
-Commands: `/locate`, `/tp`, `/ai_export`, `/ai_import`, `/ai_dataset`,
-`/ai_stats`.
+Also: `/locate`, `/tp`.
+
+</details>
 
 ## 🛠️ Tech stack
 
@@ -121,20 +101,34 @@ Commands: `/locate`, `/tp`, `/ai_export`, `/ai_import`, `/ai_dataset`,
 | Texture utilities | Python (`generate_textures.py`) |
 | Rendering | GPU-driven renderer, Vulkan layers |
 
-## 📚 Documentation
+```
+NV2_ENGINE/
+├── Core/         Rust runtime: engine, gameplay, renderer, world sim, UI (wgpu, winit)
+├── Bridge/       .NET 8 content tools: atlas slicing, asset preparation
+├── Assets/       Resources and packaging
+└── VulkanLayers/ Supporting Vulkan layers
+```
+
+> [!NOTE]
+> The repository previously shipped ~3 700 Mojang/Minecraft texture files.
+> They were removed and replaced with the engine's deterministic procedural
+> texture generator — see [`ASSET_AUDIT.md`](ASSET_AUDIT.md) and [`ATTRIBUTION.md`](ATTRIBUTION.md).
+
+<details>
+<summary><b>📚 Documentation</b></summary>
 
 | File | Content |
 |---|---|
 | `TECHNOLOGIES_AND_CURRENT_IMPLEMENTATION.md` | Solution overview and tech stack |
-| `AI_IMPLEMENTATION_SUMMARY.md` | AI vegetation system — implementation summary |
-| `AI_TECHNICAL_DOCS.md` | Neural network mathematics and implementation details |
-| `AI_PHASE2_ROADMAP.md` | Future plans (internet integration, GPU textures, …) |
+| `AI_IMPLEMENTATION_SUMMARY.md` | AI vegetation system summary |
+| `AI_TECHNICAL_DOCS.md` | Neural network mathematics |
+| `AI_PHASE2_ROADMAP.md` | Future plans (internet integration, GPU textures…) |
 | `QUICKSTART.md` | Build & run instructions |
 | `CHANGELOG.md` | What changed |
-| `ASSET_AUDIT.md` | Audit & removal of Mojang assets → procedural textures |
-| `ATTRIBUTION.md` | Attributions for remaining assets (Doto font, OFL) |
 
-## 🚀 Roadmap (Phase 2)
+</details>
+
+## 🚀 Roadmap
 
 - [ ] Downloading training datasets
 - [ ] GPU texture generation
@@ -142,4 +136,12 @@ Commands: `/locate`, `/tp`, `/ai_export`, `/ai_import`, `/ai_dataset`,
 - [x] Community model sharing
 - [x] Player preference learning
 
-Details in `AI_PHASE2_ROADMAP.md`.
+---
+
+<div align="center">
+
+**Part of [BartoszOsiej](https://github.com/BartoszOsiej)'s systems toolkit** · [`halcyon`](https://github.com/BartoszOsiej/halcyon-process-monitor) · [`externum`](https://github.com/BartoszOsiej/externum) · [`AURORA-OS`](https://github.com/BartoszOsiej/AURORA-OS)
+
+MIT © 2026 Bartosz Osiej
+
+</div>
