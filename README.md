@@ -1,5 +1,8 @@
 <img src="https://capsule-render.vercel.app/api?type=slice&color=0:7f5af0,50:2cb67d,100:16161a&height=140&section=header&text=NV2%20ENGINE&fontSize=38&fontColor=fff&desc=voxel%20engine%20%C2%B7%20neural%20terrain%20%C2%B7%20Rust%20%C2%B7%20wgpu&descSize=15&descAlignY=72" width="100%" />
 
+
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/BartoszOsiej/NV2_ENGINE/badge)](https://scorecard.dev/viewer/?uri=github.com/BartoszOsiej/NV2_ENGINE)
+
 <div align="center">
 
 [![crates.io](https://img.shields.io/crates/v/nv2_engine?style=for-the-badge&logo=rust&label=nv2_engine)](https://crates.io/crates/nv2_engine)
