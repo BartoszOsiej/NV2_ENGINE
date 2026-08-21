@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   build:
@@ -30,8 +31,26 @@ jobs:
             type=raw,value=latest
             type=sha
       - uses: docker/build-push-action@v6
+        id: build
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign image (keyless, Fulcio OIDC)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          IMAGE=$(echo "$TAGS" | head -n1 | cut -d: -f1)
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+          echo "signed ${IMAGE}@${DIGEST}"
+      - name: Verify signature
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          IMAGE=$(echo "$TAGS" | head -n1 | cut -d: -f1)
+          cosign verify "${IMAGE}@${DIGEST}"             --certificate-identity-regexp "^https://github.com/${{ github.repository_owner }}/"             --certificate-oidc-issuer https://token.actions.githubusercontent.com
