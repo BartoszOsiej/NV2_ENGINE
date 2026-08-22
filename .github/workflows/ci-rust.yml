@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - run: pip install zizmor && zizmor .
+      - run: pip install zizmor && zizmor .github/workflows/ci-rust.yml
 
   actionlint:
     name: actionlint
