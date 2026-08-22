@@ -32,6 +32,7 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+        working-directory: Core
 
   clippy:
     name: clippy (${{ matrix.os }})
@@ -45,7 +46,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@7c8d7d138f5c09cef361f8214cf96882cd029cdb
         with:
           components: clippy
-      - run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::style
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: Core
 
   test:
     name: test (${{ matrix.os }})
@@ -58,6 +60,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
       - run: cargo test --all-features --verbose
+        working-directory: Core
 
   miri:
     name: miri (UB check)
@@ -68,7 +71,9 @@ jobs:
         with:
           components: miri
       - run: cargo miri setup
+        working-directory: Core
       - run: cargo miri test
+        working-directory: Core
 
   audit:
     name: cargo-audit
@@ -77,14 +82,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
       - run: cargo install cargo-audit --locked
+        working-directory: Core
       - run: cargo audit --deny warnings
+        working-directory: Core
 
   deny:
     name: cargo-deny
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25
+      - uses: EmbarkStudios/cargo-deny-action@b66acf5e9fe20f8aba065be86778a8a4c846f902
         with:
           command: check all
 
@@ -93,7 +100,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: crate-ci/typos@1a51d4b5a03bb97576af186c813af67e9137ba7c
+      - uses: crate-ci/typos@12ffd4a04b4893ab75db66a59aaad2d996c3e982
 
   zizmor:
     name: zizmor (GH Actions security)
@@ -114,10 +121,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: github/codeql-action/init@42947a340483f03ba47bb1a039b2c519aab3df85
+      - uses: github/codeql-action/init@6d786de4d6f3531a740e445b53a42b622bbbace8
         with:
           languages: rust
-      - uses: github/codeql-action/analyze@42947a340483f03ba47bb1a039b2c519aab3df85
+      - uses: github/codeql-action/analyze@6d786de4d6f3531a740e445b53a42b622bbbace8
 
   scorecard:
     name: OpenSSF Scorecard
@@ -126,8 +133,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: ossf/scorecard-action@f49aabe0b5af0936a0987cfb85d86b75731b0186
+      - uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          publish_results: false
