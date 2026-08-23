@@ -19,11 +19,12 @@ jobs:
 
       - name: Install VHS
         run: |
-          curl -sLO https://github.com/charmbracelet/vhs/releases/latest/download/vhs_linux_amd64.tar.gz
-          tar xzf vhs_linux_amd64.tar.gz
+          curl -sLO "https://github.com/charmbracelet/vhs/releases/download/v0.11.0/vhs_0.11.0_Linux_x86_64.tar.gz"
+          tar xzf vhs_0.11.0_Linux_x86_64.tar.gz
           sudo mv vhs /usr/local/bin/
+          vhs --version
 
-      - name: Render demos to SVG
+      - name: Render demos
         run: |
           mkdir -p assets
           for tape in demos/*.tape demos/*.vhs; do
@@ -33,13 +34,13 @@ jobs:
             echo "Rendered: assets/${name}.svg"
           done
 
-      - name: Commit rendered assets
+      - name: Commit assets
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add assets/*.svg assets/*.gif
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "No changes"
           else
             git commit -m "chore: re-render VHS demos [skip ci]"
             git push
