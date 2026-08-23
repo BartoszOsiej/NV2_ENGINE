@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VIVIA — Neural Voxel Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#06060e;--surface:rgba(255,255,255,.03);--border:rgba(255,255,255,.06);
+  --text:#e6edf3;--dim:#8b949e;--accent:#7f5af0;--accent2:#2cb67d;
+  --glow1:rgba(127,90,240,.15);--glow2:rgba(44,182,125,.12);
+}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;line-height:1.7}
+::selection{background:var(--accent);color:#fff}
+
+/* Stars */
+.stars{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.star{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;animation:twinkle var(--dur) ease-in-out infinite alternate}
+@keyframes twinkle{0%{opacity:.15;transform:scale(.8)}100%{opacity:.8;transform:scale(1.2)}}
+
+/* Orbs */
+.orb{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none;z-index:0}
+.orb1{width:600px;height:600px;background:var(--glow1);top:-200px;right:-150px;animation:orbFloat 20s ease-in-out infinite}
+.orb2{width:500px;height:500px;background:var(--glow2);bottom:-200px;left:-100px;animation:orbFloat 25s ease-in-out infinite reverse}
+@keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-40px)}}
+
+/* Layout */
+.container{max-width:1100px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
+section{padding:5rem 0}
+
+/* Hero */
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;text-align:center;position:relative}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:100px;background:rgba(127,90,240,.12);border:1px solid rgba(127,90,240,.25);font-size:.8rem;font-weight:600;color:var(--accent);letter-spacing:.05em;text-transform:uppercase;margin-bottom:24px}
+.hero-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.5;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
+h1{font-size:clamp(3rem,8vw,6rem);font-weight:900;letter-spacing:-.04em;line-height:1.05;margin-bottom:16px}
+h1 .gradient{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:1.15rem;color:var(--dim);max-width:600px;margin:0 auto 40px;line-height:1.8}
+.hero-actions{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.btn{padding:14px 32px;border-radius:12px;font-weight:600;font-size:.95rem;text-decoration:none;transition:all .25s;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:linear-gradient(135deg,var(--accent),#5a3fd4);color:#fff;box-shadow:0 4px 24px rgba(127,90,240,.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(127,90,240,.45)}
+.btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12)}
+
+/* Terminal */
+.terminal{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;margin:48px auto;max-width:700px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.terminal-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.06)}
+.terminal-dot{width:12px;height:12px;border-radius:50%}
+.dot-r{background:#f85149}.dot-y{background:#e3b341}.dot-g{background:#3fb950}
+.terminal-title{margin-left:8px;font-size:.75rem;color:var(--dim);font-family:'JetBrains Mono',monospace}
+.terminal-body{padding:20px 24px;font-family:'JetBrains Mono',monospace;font-size:.85rem;line-height:2}
+.terminal-body .prompt{color:var(--accent)}
+.terminal-body .cmd{color:var(--text)}
+.terminal-body .out{color:var(--dim)}
+.terminal-body .ok{color:var(--accent2)}
+.terminal-body .warn{color:#e3b341}
+
+/* Cards */
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin-top:40px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;transition:all .3s;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;inset:0;border-radius:16px;padding:1px;background:linear-gradient(135deg,transparent,rgba(127,90,240,0),transparent);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .3s}
+.card:hover{transform:translateY(-4px);border-color:rgba(127,90,240,.2)}
+.card:hover::before{opacity:1}
+.card-icon{font-size:2rem;margin-bottom:16px}
+.card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+.card p{color:var(--dim);font-size:.9rem;line-height:1.7}
+.card .tag{display:inline-block;padding:3px 10px;border-radius:6px;background:rgba(127,90,240,.1);color:var(--accent);font-size:.75rem;font-weight:600;margin-top:12px}
+
+/* Architecture */
+.arch-flow{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin:40px 0}
+.arch-node{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 24px;text-align:center;transition:all .3s}
+.arch-node:hover{border-color:var(--accent);box-shadow:0 0 20px var(--glow1)}
+.arch-node .label{font-size:.75rem;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.arch-node .value{font-weight:700;font-size:1rem}
+.arch-arrow{color:var(--dim);font-size:1.5rem;animation:arrowPulse 2s ease-in-out infinite}
+@keyframes arrowPulse{0%,100%{opacity:.3}50%{opacity:.8}}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin:40px 0}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;text-align:center}
+.stat .num{font-size:2rem;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat .label{font-size:.8rem;color:var(--dim);margin-top:4px}
+
+/* Section headings */
+.section-title{font-size:2rem;font-weight:800;letter-spacing:-.03em;margin-bottom:8px}
+.section-sub{color:var(--dim);font-size:1rem;margin-bottom:32px}
+
+/* Footer */
+footer{text-align:center;padding:4rem 0;border-top:1px solid var(--border);color:var(--dim);font-size:.85rem}
+footer a{color:var(--accent);text-decoration:none}
+
+/* Scroll reveal */
+.reveal{opacity:0;transform:translateY(30px);transition:all .7s cubic-bezier(.16,1,.3,1)}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* Responsive */
+@media(max-width:768px){
+  .arch-flow{flex-direction:column}
+  .arch-arrow{transform:rotate(90deg)}
+  .grid3{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- Stars -->
+<div class="stars" id="stars"></div>
+
+<!-- Orbs -->
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+
+<!-- Hero -->
+<section class="hero">
+<div class="container">
+  <div class="hero-badge"><span class="dot"></span> WGPU + RUST</div>
+  <h1><span class="gradient">VIVIA</span></h1>
+  <p class="subtitle">Neural voxel engine with MLP terrain generation, multiplayer over TCP, and GPU-driven wgpu rendering. Written in Rust.</p>
+  <div class="hero-actions">
+    <a href="https://crates.io/crates/nv2_engine" class="btn btn-primary">📦 crates.io</a>
+    <a href="https://github.com/BartoszOsiej/NV2_ENGINE" class="btn btn-secondary">⭐ GitHub</a>
+    <a href="https://github.com/BartoszOsiej/NV2_ENGINE/releases" class="btn btn-secondary">⬇ Releases</a>
+  </div>
+</div>
+</section>
+
+<!-- Terminal Demo -->
+<section>
+<div class="container">
+  <div class="terminal reveal">
+    <div class="terminal-bar">
+      <span class="terminal-dot dot-r"></span>
+      <span class="terminal-dot dot-y"></span>
+      <span class="terminal-dot dot-g"></span>
+      <span class="terminal-title">vivia — neural voxel engine</span>
+    </div>
+    <div class="terminal-body">
+      <div><span class="prompt">$</span> <span class="cmd">cargo install nv2_engine</span></div>
+      <div class="out">   Compiling nv2_engine v0.4.1</div>
+      <div class="out">   Release build optimized (LTO, strip)</div>
+      <div><span class="prompt">$</span> <span class="cmd">nv2_engine --version</span></div>
+      <div><span class="ok">viv</span><span class="out">ia v0.4.1 (wgpu neural renderer)</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">nv2_engine serve --multiplayer</span></div>
+      <div class="out">   Listening on 0.0.0.0:7878</div>
+      <div class="out">   MLP terrain generator: <span class="ok">loaded</span></div>
+      <div class="out">   wgpu adapter: <span class="ok">NVIDIA RTX</span></div>
+      <div class="out">   Players connected: <span class="warn">0 → 1 → 2</span></div>
+      <div><span class="prompt">$</span> <span class="cmd"># Voxel world · neural terrain · multiplayer</span></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- Features -->
+<section>
+<div class="container">
+  <h2 class="section-title reveal">What it does</h2>
+  <p class="section-sub reveal">A from-scratch game engine — not a framework, not a tutorial.</p>
+  <div class="grid3">
+    <div class="card reveal">
+      <div class="card-icon">🧠</div>
+      <h3>MLP Neural Renderer</h3>
+      <p>Procedural terrain generated by a trained neural network. No hand-crafted heightmaps — the MLP learns terrain patterns and generates infinite worlds on the GPU.</p>
+      <span class="tag">Machine Learning</span>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">🟦</div>
+      <h3>Voxel Engine</h3>
+      <p>Full voxel pipeline: chunk loading, greedy meshing, block interaction, inventory/crafting. GPU-driven rendering with wgpu — no OpenGL, no Vulkan SDK.</p>
+      <span class="tag">wgpu</span>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">🌐</div>
+      <h3>Multiplayer TCP</h3>
+      <p>Real-time multiplayer over raw TCP sockets. Player sync, world state replication, entity interpolation. No game server framework — hand-rolled networking.</p>
+      <span class="tag">Networking</span>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">🎮</div>
+      <h3>Gameplay Loop</h3>
+      <p>Menus, save/load, item handling, block placement, world simulation. A complete playable game, not a graphics demo.</p>
+      <span class="tag">Game Design</span>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">📦</div>
+      <h3>crates.io + GHCR</h3>
+      <p>Published as <code>nv2_engine</code> on crates.io. Docker images on GHCR. Cross-platform releases (Linux, macOS, Windows).</p>
+      <span class="tag">Distribution</span>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">🏪</div>
+      <h3>Epic Games Store</h3>
+      <p>Build pipeline for EGS integration. Linux and Windows portable builds. itch.io DRM-free distribution.</p>
+      <span class="tag">Publishing</span>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- Architecture -->
+<section>
+<div class="container">
+  <h2 class="section-title reveal">Architecture</h2>
+  <p class="section-sub reveal">From input to pixels — the full pipeline.</p>
+  <div class="arch-flow reveal">
+    <div class="arch-node"><div class="label">Input</div><div class="value">SDL / Events</div></div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-node"><div class="label">Game Logic</div><div class="value">ECS + State</div></div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-node"><div class="label">Terrain</div><div class="value">MLP Neural</div></div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-node"><div class="label">Meshing</div><div class="value">Greedy Voxels</div></div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-node"><div class="label">GPU</div><div class="value">wgpu Render</div></div>
+  </div>
+</div>
+</section>
+
+<!-- Stats -->
+<section>
+<div class="container">
+  <h2 class="section-title reveal">By the numbers</h2>
+  <div class="stats reveal">
+    <div class="stat"><div class="num">0%</div><div class="label">GC pauses (Rust)</div></div>
+    <div class="stat"><div class="num">60+</div><div class="label">FPS target</div></div>
+    <div class="stat"><div class="num">100%</div><div class="label">Custom engine</div></div>
+    <div class="stat"><div class="num">3</div><div class="label">Platforms</div></div>
+    <div class="stat"><div class="num">∞</div><div class="label">Neural terrain</div></div>
+  </div>
+</div>
+</section>
+
+<!-- Quick Start -->
+<section>
+<div class="container">
+  <h2 class="section-title reveal">Quick start</h2>
+  <div class="terminal reveal">
+    <div class="terminal-bar">
+      <span class="terminal-dot dot-r"></span>
+      <span class="terminal-dot dot-y"></span>
+      <span class="terminal-dot dot-g"></span>
+      <span class="terminal-title">install</span>
+    </div>
+    <div class="terminal-body">
+      <div><span class="prompt"># From crates.io</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">cargo install nv2_engine</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">nv2_engine</span></div>
+      <div class="ok">   ▸ VIVIA v0.4.1 starting...</div>
+      <div class="ok">   ▸ Neural terrain: loaded</div>
+      <div class="ok">   ▸ wgpu renderer: initialized</div>
+      <div><span class="prompt"># Or from Docker</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">docker pull ghcr.io/bartoszosiej/nv2_engine</span></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- Footer -->
+<footer>
+<div class="container">
+  <p style="margin-bottom:8px">Built with 🦀 Rust · wgpu · MLP neural networks</p>
+  <p><a href="https://github.com/BartoszOsiej/NV2_ENGINE">GitHub</a> · <a href="https://crates.io/crates/nv2_engine">crates.io</a> · <a href="https://github.com/BartoszOsiej">Bartosz Osiej</a></p>
+</div>
+</footer>
+
+<script>
+// Stars
+const starsEl=document.getElementById('stars');
+for(let i=0;i<80;i++){const s=document.createElement('div');s.className='star';s.style.cssText=`left:${Math.random()*100}%;top:${Math.random()*100}%;animation-duration:${2+Math.random()*4}s;animation-delay:${Math.random()*3}s;width:${1+Math.random()*2}px;height:${1+Math.random()*2}px;opacity:${.2+Math.random()*.5}`;starsEl.appendChild(s)}
+
+// Scroll reveal
+const observer=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')})},{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
+</script>
+</body>
+</html>
