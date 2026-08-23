@@ -19,6 +19,19 @@ procedural terrain generation, interaction, inventory/crafting gameplay and
 content-pipeline tools. A working gameplay loop: menus, commands, save/load,
 item handling, block interaction, world simulation, GPU-driven rendering.
 
+## 🎮 Demo
+
+
+
+<!-- VHS auto-rendered — run: vhs demos/nv2.tape -->
+
+
+
+![NV2 Engine Demo](assets/nv2-demo.svg)
+
+
+
+
 ## Quick start
 
 ```bash
