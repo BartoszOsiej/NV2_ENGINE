@@ -1,0 +1,46 @@
+name: VHS TUI Demos
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['demos/*.tape', 'demos/*.vhs', '.github/workflows/vhs-demos.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install VHS
+        run: |
+          curl -sLO https://github.com/charmbracelet/vhs/releases/latest/download/vhs_linux_amd64.tar.gz
+          tar xzf vhs_linux_amd64.tar.gz
+          sudo mv vhs /usr/local/bin/
+
+      - name: Render demos to SVG
+        run: |
+          mkdir -p assets
+          for tape in demos/*.tape demos/*.vhs; do
+            [ -f "$tape" ] || continue
+            name=$(basename "$tape" | sed 's/\.[^.]*$//')
+            vhs "$tape" -o "assets/${name}.svg"
+            echo "Rendered: assets/${name}.svg"
+          done
+
+      - name: Commit rendered assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add assets/*.svg assets/*.gif
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: re-render VHS demos [skip ci]"
+            git push
+          fi
