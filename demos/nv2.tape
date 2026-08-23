@@ -1,4 +1,4 @@
-Output assets/nv2-demo.svg
+Output assets/nv2-demo.gif
 
 Set FontSize 16
 Set Width 960

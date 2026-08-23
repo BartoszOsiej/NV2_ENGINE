@@ -19,6 +19,8 @@ jobs:
 
       - name: Install VHS
         run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           curl -sLO "https://github.com/charmbracelet/vhs/releases/download/v0.11.0/vhs_0.11.0_Linux_x86_64.tar.gz"
           tar xzf vhs_0.11.0_Linux_x86_64.tar.gz --strip-components=1
           sudo mv vhs /usr/local/bin/
@@ -30,15 +32,15 @@ jobs:
           for tape in demos/*.tape demos/*.vhs; do
             [ -f "$tape" ] || continue
             name=$(basename "$tape" | sed 's/\.[^.]*$//')
-            vhs "$tape" -o "assets/${name}-demo.svg"
-            echo "Rendered: assets/${name}-demo.svg"
+            vhs "$tape" -o "assets/${name}-demo.gif"
+            echo "Rendered: assets/${name}-demo.gif"
           done
 
       - name: Commit assets
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add assets/*.svg assets/*.gif
+          git add assets/*.gif assets/*.gif
           if git diff --cached --quiet; then
             echo "No changes"
           else
