@@ -44,7 +44,7 @@ fn climate_atmosphere(zone: ClimateZone, t_c: f64, p_mm: f64) -> [f32; 3] {
         ClimateZone::TropicalWet => [0.58, 0.74, 0.80], // humid teal
         ClimateZone::Tundra => [0.62, 0.70, 0.84], // pale polar steel
         ClimateZone::Boreal => [0.64, 0.74, 0.90], // cool northern blue
-        ClimateZone::Dry => [0.80, 0.78, 0.64], // warm steppe haze
+        ClimateZone::Dry => [0.80, 0.78, 0.64],    // warm steppe haze
         ClimateZone::Temperate => [0.56, 0.72, 0.92], // classic blue
     };
     // blend toward warm on hot days, toward grey-blue when wet
@@ -511,11 +511,17 @@ impl BiomeGenerator {
         }
     }
 
-    pub fn populate_world_trees_for_chunk(&self, world: &mut crate::world::World, cx: i32, cz: i32) {
+    pub fn populate_world_trees_for_chunk(
+        &self,
+        world: &mut crate::world::World,
+        cx: i32,
+        cz: i32,
+    ) {
         if self.settings.low_end_pc() {
             return;
         }
-        self.vegetation.populate_world_trees_for_chunk(world, self, cx, cz);
+        self.vegetation
+            .populate_world_trees_for_chunk(world, self, cx, cz);
     }
 
     /// Per-block ground cover placed during chunk generation. Density and
@@ -560,7 +566,7 @@ impl BiomeGenerator {
                     world_seed.wrapping_add(7_777),
                     wx as f64 * 0.11,
                     wz as f64 * 0.11,
-                ) as f64;
+                );
                 // [0,1] noise, higher values place cover → density fraction
                 if (noise + 1.0) * 0.5 > density {
                     continue;
@@ -618,13 +624,15 @@ impl BiomeGenerator {
             self.temperature_seed,
             sample_x * 0.00185 + 48.0,
             sample_z * 0.00185 - 31.0,
-        ) + 1.0) * 0.5)
+        ) + 1.0)
+            * 0.5)
             .clamp(0.0, 1.0);
         let humidity = ((fbm4(
             self.humidity_seed,
             sample_x * 0.00195 - 64.0,
             sample_z * 0.00195 + 22.0,
-        ) + 1.0) * 0.5)
+        ) + 1.0)
+            * 0.5)
             .clamp(0.0, 1.0);
         // NV-2.0 realism: each column maps to a real Earth coordinate (the
         // seed's anchor ± latitude/longitude offset) and the *measured*
@@ -644,7 +652,8 @@ impl BiomeGenerator {
         let zone = whittaker_zone(real_temp_c, warmest, real_precip_mm);
         let erosion = ((fbm4(self.erosion_seed, sample_x * 0.0028, sample_z * 0.0028) + 1.0) * 0.5)
             .clamp(0.0, 1.0);
-        let ridges = ridge(fbm4(self.peak_seed, sample_x * 0.0048, sample_z * 0.0048)).clamp(0.0, 1.0);
+        let ridges =
+            ridge(fbm4(self.peak_seed, sample_x * 0.0048, sample_z * 0.0048)).clamp(0.0, 1.0);
         let variation = fbm4(self.detail_seed, sample_x * 0.0062, sample_z * 0.0062);
         // No smooth_step here: it pushes mid-range noise to the 0/1 extremes,
         // which turns the map into flat ocean + flat plateau. A linear remap
@@ -762,8 +771,17 @@ impl BiomeGenerator {
         }
     }
 
-    fn sample_surface_height(&self, climate: ClimateSample, definition: BiomeDefinition, biome: BiomeId) -> usize {
-        let macro_noise = fbm4(self.height_seed, climate.sample_x * 0.0024, climate.sample_z * 0.0024);
+    fn sample_surface_height(
+        &self,
+        climate: ClimateSample,
+        definition: BiomeDefinition,
+        biome: BiomeId,
+    ) -> usize {
+        let macro_noise = fbm4(
+            self.height_seed,
+            climate.sample_x * 0.0024,
+            climate.sample_z * 0.0024,
+        );
         let local_noise = fbm4(
             self.detail_seed.wrapping_add(29),
             climate.sample_x * 0.0095,
@@ -780,7 +798,8 @@ impl BiomeGenerator {
                 self.surface_seed,
                 climate.sample_x * 0.015,
                 climate.sample_z * 0.015,
-            )) * 3.4 - 1.4
+            )) * 3.4
+                - 1.4
         } else {
             0.0
         };
@@ -812,8 +831,8 @@ impl BiomeGenerator {
         let rolling = macro_noise * (definition.relief * 1.6) * (0.25 + shelf * 0.75)
             + (1.0 - shelf) * macro_noise * 5.0;
         let local = local_noise * definition.relief * (0.25 + shelf * 0.75);
-        let mountain = climate.mountainness
-            * (18.0 + mountain_ridge * 22.0 + (1.0 - climate.erosion) * 10.0);
+        let mountain =
+            climate.mountainness * (18.0 + mountain_ridge * 22.0 + (1.0 - climate.erosion) * 10.0);
 
         (base + rolling + local + mountain + dunes + coast_flatten + swamp_flatten)
             .round()
@@ -830,7 +849,8 @@ impl BiomeGenerator {
                 self.water_seed,
                 climate.sample_x * 0.045,
                 climate.sample_z * 0.045,
-            ) + 1.0) * 0.5)
+            ) + 1.0)
+                * 0.5)
                 .clamp(0.0, 1.0);
             if climate.humidity > 0.66 && pool > 0.62 {
                 return (surface + 1).min(SEA_LEVEL + 2);
@@ -941,7 +961,11 @@ impl BiomeGenerator {
     fn filler_block(&self, sample: &ColumnSample, depth: usize) -> BlockType {
         match sample.biome {
             BiomeId::Ocean | BiomeId::Coast => {
-                if depth <= 4 { BlockType::Sand } else { BlockType::Clay }
+                if depth <= 4 {
+                    BlockType::Sand
+                } else {
+                    BlockType::Clay
+                }
             }
             BiomeId::Swamp => {
                 if depth <= 2 {
@@ -953,7 +977,11 @@ impl BiomeGenerator {
                 }
             }
             BiomeId::Desert => {
-                if depth <= 6 { BlockType::Sand } else { BlockType::Clay }
+                if depth <= 6 {
+                    BlockType::Sand
+                } else {
+                    BlockType::Clay
+                }
             }
             BiomeId::Mountains => {
                 if depth <= 2 {
@@ -965,10 +993,18 @@ impl BiomeGenerator {
                 }
             }
             BiomeId::Taiga => {
-                if depth <= 2 { BlockType::CoarseSoil } else { sample.definition.ground_block }
+                if depth <= 2 {
+                    BlockType::CoarseSoil
+                } else {
+                    sample.definition.ground_block
+                }
             }
             BiomeId::DarkForest => {
-                if depth <= 2 { BlockType::RootedSoil } else { sample.definition.ground_block }
+                if depth <= 2 {
+                    BlockType::RootedSoil
+                } else {
+                    sample.definition.ground_block
+                }
             }
             BiomeId::Plains | BiomeId::Forest => sample.definition.ground_block,
         }
@@ -981,7 +1017,8 @@ impl BiomeGenerator {
                 wx as f64 * 0.09,
                 wy as f64 * 0.11,
                 wz as f64 * 0.09,
-            ) > 0.84 {
+            ) > 0.84
+            {
                 BlockType::Tuff
             } else {
                 BlockType::SlateRock
@@ -992,7 +1029,8 @@ impl BiomeGenerator {
                 wx as f64 * 0.05,
                 wy as f64 * 0.05,
                 wz as f64 * 0.05,
-            ) > 0.70 {
+            ) > 0.70
+            {
                 BlockType::Andesite
             } else {
                 BlockType::Stone
@@ -1015,7 +1053,10 @@ impl BiomeGenerator {
         );
 
         match () {
-            _ if sample.biome == BiomeId::Mountains && (28..=80).contains(&wy) && density > 0.968 => {
+            _ if sample.biome == BiomeId::Mountains
+                && (28..=80).contains(&wy)
+                && density > 0.968 =>
+            {
                 Some(BlockType::EmeraldOre)
             }
             _ if wy <= 16 && density > 0.970 => Some(BlockType::SlateDiamondOre),
@@ -1051,8 +1092,7 @@ impl BiomeGenerator {
             wz as f64 * 0.018 - 17.0,
         ));
 
-        (tunnel > 0.940 && chamber > 0.860 && depth_mask > 0.15)
-            || (depth > 28 && chamber > 0.972)
+        (tunnel > 0.940 && chamber > 0.860 && depth_mask > 0.15) || (depth > 28 && chamber > 0.972)
     }
 
     fn fill_terrain_column(&self, wx: i32, wz: i32, column: &mut [BlockType; CHUNK_H]) {
@@ -1150,9 +1190,11 @@ impl BiomeGenerator {
                 .clamp(0.78, 1.25),
             grade: sample.definition.grade,
             vegetation_tint: [
-                (sample.definition.vegetation_tint[0] * (0.95 + sample.temperature as f32 * 0.08)).clamp(0.0, 1.25),
+                (sample.definition.vegetation_tint[0] * (0.95 + sample.temperature as f32 * 0.08))
+                    .clamp(0.0, 1.25),
                 (sample.definition.vegetation_tint[1] * (0.94 + lushness * 0.10)).clamp(0.0, 1.25),
-                (sample.definition.vegetation_tint[2] * (0.92 + sample.humidity as f32 * 0.12)).clamp(0.0, 1.25),
+                (sample.definition.vegetation_tint[2] * (0.92 + sample.humidity as f32 * 0.12))
+                    .clamp(0.0, 1.25),
             ],
             warmth: sample.temperature as f32,
             moisture: sample.humidity as f32,
@@ -1165,7 +1207,10 @@ impl BiomeGenerator {
         let sample = self.sample_column(wx, wz);
         sample.water_top == sample.surface
             && sample.surface >= SEA_LEVEL + 3
-            && !matches!(sample.biome, BiomeId::Ocean | BiomeId::Coast | BiomeId::Swamp)
+            && !matches!(
+                sample.biome,
+                BiomeId::Ocean | BiomeId::Coast | BiomeId::Swamp
+            )
     }
 
     pub fn is_spawn_candidate(&self, wx: i32, wz: i32) -> bool {
@@ -1173,7 +1218,10 @@ impl BiomeGenerator {
         if sample.water_top != sample.surface {
             return false;
         }
-        if !matches!(sample.biome, BiomeId::Plains | BiomeId::Forest | BiomeId::Taiga) {
+        if !matches!(
+            sample.biome,
+            BiomeId::Plains | BiomeId::Forest | BiomeId::Taiga
+        ) {
             return false;
         }
         if sample.surface < SEA_LEVEL + 6 || sample.surface > 96 {
@@ -1195,7 +1243,10 @@ impl BiomeGenerator {
             let neighbour = self.sample_column(wx + dx, wz + dz);
             if neighbour.water_top != neighbour.surface
                 || neighbour.surface < SEA_LEVEL + 3
-                || matches!(neighbour.biome, BiomeId::Ocean | BiomeId::Coast | BiomeId::Swamp)
+                || matches!(
+                    neighbour.biome,
+                    BiomeId::Ocean | BiomeId::Coast | BiomeId::Swamp
+                )
             {
                 return false;
             }
@@ -1408,4 +1459,3 @@ mod tests {
         assert_eq!(unsupported, 0, "cover placed on unsupported surface");
     }
 }
-

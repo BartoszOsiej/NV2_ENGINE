@@ -1,26 +1,26 @@
-use cgmath::{Deg, EuclideanSpace, InnerSpace, Matrix4, Point3, Vector3, perspective};
 use crate::input::InputState;
 use crate::world::block::{MovementMedium, MovementMediumKind};
 use crate::world::{self, BlockType};
+use cgmath::{perspective, Deg, EuclideanSpace, InnerSpace, Matrix4, Point3, Vector3};
 use winit::keyboard::KeyCode;
 
-const PLAYER_HEIGHT:      f32 = 1.8;
+const PLAYER_HEIGHT: f32 = 1.8;
 const PLAYER_HALF_HEIGHT: f32 = PLAYER_HEIGHT * 0.5;
-const PLAYER_EYE_HEIGHT:  f32 = 1.7;
-const PLAYER_RADIUS:      f32 = 0.3;
-const CAMERA_NEAR_PLANE:  f32 = 0.05;
-const WALK_SPEED:         f32 = 5.5;
-const FLY_SPEED:          f32 = 9.0;
+const PLAYER_EYE_HEIGHT: f32 = 1.7;
+const PLAYER_RADIUS: f32 = 0.3;
+const CAMERA_NEAR_PLANE: f32 = 0.05;
+const WALK_SPEED: f32 = 5.5;
+const FLY_SPEED: f32 = 9.0;
 const FLY_VERTICAL_SPEED: f32 = 8.5;
-const SPRINT_MULTIPLIER:  f32 = 1.75;
-const JUMP_SPEED:         f32 = 8.0;
-const GRAVITY:            f32 = 20.0;
-const WATER_GRAVITY:      f32 = 6.0;
-const WATER_SINK_CAP:     f32 = 2.0;
-const MOUSE_SENSITIVITY:  f32 = 0.002;
-const MAX_FALL_SPEED:     f32 = 32.0;
-const GROUND_ACCELERATION:f32 = 8.0;
-const MEDIUM_SPEED_SETTLE:f32 = 12.0;
+const SPRINT_MULTIPLIER: f32 = 1.75;
+const JUMP_SPEED: f32 = 8.0;
+const GRAVITY: f32 = 20.0;
+const WATER_GRAVITY: f32 = 6.0;
+const WATER_SINK_CAP: f32 = 2.0;
+const MOUSE_SENSITIVITY: f32 = 0.002;
+const MAX_FALL_SPEED: f32 = 32.0;
+const GROUND_ACCELERATION: f32 = 8.0;
+const MEDIUM_SPEED_SETTLE: f32 = 12.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct MovementTuning {
@@ -114,46 +114,49 @@ impl AABB {
     }
 
     pub fn intersects_block(&self, bx: i32, by: i32, bz: i32) -> bool {
-        let b_min = Vector3::new(bx as f32,       by as f32,       bz as f32);
+        let b_min = Vector3::new(bx as f32, by as f32, bz as f32);
         let b_max = Vector3::new(bx as f32 + 1.0, by as f32 + 1.0, bz as f32 + 1.0);
-        self.min.x < b_max.x && self.max.x > b_min.x
-            && self.min.y < b_max.y && self.max.y > b_min.y
-            && self.min.z < b_max.z && self.max.z > b_min.z
+        self.min.x < b_max.x
+            && self.max.x > b_min.x
+            && self.min.y < b_max.y
+            && self.max.y > b_min.y
+            && self.min.z < b_max.z
+            && self.max.z > b_min.z
     }
 }
 
 pub struct Camera {
-    pub position:  Vector3<f32>,
-    pub velocity:  Vector3<f32>,
-    pub yaw:       f32,
-    pub pitch:     f32,
-    pub movement:  MovementTuning,
+    pub position: Vector3<f32>,
+    pub velocity: Vector3<f32>,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub movement: MovementTuning,
     pub movement_modifiers: ActiveMovementModifiers,
     pub on_ground: bool,
-    pub in_water:  bool,
+    pub in_water: bool,
     pub in_foliage_medium: bool,
     pub footstep_volume: f32,
     pub is_flying: bool,
-    bob_phase:     f32,
-    bob_offset:    f32,
-    intent:        MovementIntent,
+    bob_phase: f32,
+    bob_offset: f32,
+    intent: MovementIntent,
 }
 
 impl Camera {
     pub fn new(position: Vector3<f32>) -> Self {
         Self {
             position,
-            velocity:  Vector3::new(0.0, 0.0, 0.0),
-            yaw:       -90.0_f32.to_radians(),
-            pitch:     0.0,
-            movement:  MovementTuning::default(),
+            velocity: Vector3::new(0.0, 0.0, 0.0),
+            yaw: -90.0_f32.to_radians(),
+            pitch: 0.0,
+            movement: MovementTuning::default(),
             movement_modifiers: ActiveMovementModifiers::default(),
             on_ground: false,
-            in_water:  false,
+            in_water: false,
             in_foliage_medium: false,
             footstep_volume: 1.0,
             is_flying: false,
-            bob_phase:  0.0,
+            bob_phase: 0.0,
             bob_offset: 0.0,
             intent: MovementIntent::default(),
         }
@@ -197,33 +200,40 @@ impl Camera {
 
     fn capture_input_intent(&mut self, input: &InputState) {
         let forward = Vector3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize();
-        let right   = Vector3::new(-self.yaw.sin(), 0.0, self.yaw.cos()).normalize();
-        let sprinting =
-            input.keys_held.contains(&KeyCode::ShiftLeft)
+        let right = Vector3::new(-self.yaw.sin(), 0.0, self.yaw.cos()).normalize();
+        let sprinting = input.keys_held.contains(&KeyCode::ShiftLeft)
             || input.keys_held.contains(&KeyCode::ShiftRight);
 
-        self.yaw   += input.mouse_dx as f32 * MOUSE_SENSITIVITY;
+        self.yaw += input.mouse_dx as f32 * MOUSE_SENSITIVITY;
         self.pitch -= input.mouse_dy as f32 * MOUSE_SENSITIVITY;
-        self.pitch  = self.pitch.clamp(-1.5, 1.5);
+        self.pitch = self.pitch.clamp(-1.5, 1.5);
 
         if self.is_flying {
             let mut planar_dir = Vector3::new(0.0_f32, 0.0, 0.0);
-            if input.keys_held.contains(&KeyCode::KeyW) { planar_dir += forward; }
-            if input.keys_held.contains(&KeyCode::KeyS) { planar_dir -= forward; }
-            if input.keys_held.contains(&KeyCode::KeyA) { planar_dir -= right; }
-            if input.keys_held.contains(&KeyCode::KeyD) { planar_dir += right; }
+            if input.keys_held.contains(&KeyCode::KeyW) {
+                planar_dir += forward;
+            }
+            if input.keys_held.contains(&KeyCode::KeyS) {
+                planar_dir -= forward;
+            }
+            if input.keys_held.contains(&KeyCode::KeyA) {
+                planar_dir -= right;
+            }
+            if input.keys_held.contains(&KeyCode::KeyD) {
+                planar_dir += right;
+            }
 
             let mut vertical = 0.0_f32;
-            if input.keys_held.contains(&KeyCode::Space) { vertical += 1.0; }
-            if input.keys_held.contains(&KeyCode::ControlLeft) || input.keys_held.contains(&KeyCode::ControlRight) {
+            if input.keys_held.contains(&KeyCode::Space) {
+                vertical += 1.0;
+            }
+            if input.keys_held.contains(&KeyCode::ControlLeft)
+                || input.keys_held.contains(&KeyCode::ControlRight)
+            {
                 vertical -= 1.0;
             }
 
-            let speed = if sprinting {
-                SPRINT_MULTIPLIER
-            } else {
-                1.0
-            };
+            let speed = if sprinting { SPRINT_MULTIPLIER } else { 1.0 };
 
             if planar_dir.magnitude2() > 0.0 {
                 let planar_vel = planar_dir.normalize() * (FLY_SPEED * speed);
@@ -241,10 +251,18 @@ impl Camera {
         }
 
         let mut move_dir = Vector3::new(0.0_f32, 0.0, 0.0);
-        if input.keys_held.contains(&KeyCode::KeyW) { move_dir += forward; }
-        if input.keys_held.contains(&KeyCode::KeyS) { move_dir -= forward; }
-        if input.keys_held.contains(&KeyCode::KeyA) { move_dir -= right; }
-        if input.keys_held.contains(&KeyCode::KeyD) { move_dir += right; }
+        if input.keys_held.contains(&KeyCode::KeyW) {
+            move_dir += forward;
+        }
+        if input.keys_held.contains(&KeyCode::KeyS) {
+            move_dir -= forward;
+        }
+        if input.keys_held.contains(&KeyCode::KeyA) {
+            move_dir -= right;
+        }
+        if input.keys_held.contains(&KeyCode::KeyD) {
+            move_dir += right;
+        }
 
         if move_dir.magnitude2() > 0.0 {
             move_dir = move_dir.normalize();
@@ -258,7 +276,9 @@ impl Camera {
     }
 
     fn eye_position(&self) -> Point3<f32> {
-        Point3::from_vec(self.position + Vector3::new(0.0, PLAYER_EYE_HEIGHT + self.bob_offset, 0.0))
+        Point3::from_vec(
+            self.position + Vector3::new(0.0, PLAYER_EYE_HEIGHT + self.bob_offset, 0.0),
+        )
     }
 
     fn player_aabb(&self) -> AABB {
@@ -297,7 +317,7 @@ impl Camera {
 
         if self.in_water {
             self.velocity.y -= WATER_GRAVITY * dt;
-            self.velocity.y  = self.velocity.y.max(-WATER_SINK_CAP);
+            self.velocity.y = self.velocity.y.max(-WATER_SINK_CAP);
             let drag_h = 0.93_f32.powf(dt * 60.0);
             let drag_v = 0.965_f32.powf(dt * 60.0);
             self.velocity.x *= drag_h;
@@ -311,12 +331,13 @@ impl Camera {
             };
             self.velocity.y -= gravity * dt;
 
-            let fall_speed_cap = (MAX_FALL_SPEED * self.movement_modifiers.fall_multiplier).max(1.0);
+            let fall_speed_cap =
+                (MAX_FALL_SPEED * self.movement_modifiers.fall_multiplier).max(1.0);
             self.velocity.y = self.velocity.y.max(-fall_speed_cap);
         }
 
         self.position.y += self.velocity.y * dt;
-        self.on_ground   = false;
+        self.on_ground = false;
         self.resolve_collisions(world, 1);
 
         self.position.x += self.velocity.x * dt;
@@ -339,9 +360,9 @@ impl Camera {
 
     fn sample_movement_modifiers(&self, world: &world::World) -> (ActiveMovementModifiers, bool) {
         let aabb = self.player_aabb();
-        let x_range = aabb.min.x.floor() as i32 ..= aabb.max.x.ceil() as i32;
-        let y_range = aabb.min.y.floor() as i32 ..= aabb.max.y.ceil() as i32;
-        let z_range = aabb.min.z.floor() as i32 ..= aabb.max.z.ceil() as i32;
+        let x_range = aabb.min.x.floor() as i32..=aabb.max.x.ceil() as i32;
+        let y_range = aabb.min.y.floor() as i32..=aabb.max.y.ceil() as i32;
+        let z_range = aabb.min.z.floor() as i32..=aabb.max.z.ceil() as i32;
 
         let mut modifiers = ActiveMovementModifiers::default();
         let mut applied_kinds = Vec::new();
@@ -351,7 +372,9 @@ impl Camera {
             for by in y_range.clone() {
                 for bz in z_range.clone() {
                     let block = world.get_block(bx, by, bz);
-                    let Some(medium) = block.movement_medium() else { continue; };
+                    let Some(medium) = block.movement_medium() else {
+                        continue;
+                    };
                     if !aabb.intersects_block(bx, by, bz) {
                         continue;
                     }
@@ -378,9 +401,9 @@ impl Camera {
         F: FnMut(BlockType) -> bool,
     {
         let aabb = self.player_aabb();
-        let x_range = aabb.min.x.floor() as i32 ..= aabb.max.x.ceil() as i32;
-        let y_range = aabb.min.y.floor() as i32 ..= aabb.max.y.ceil() as i32;
-        let z_range = aabb.min.z.floor() as i32 ..= aabb.max.z.ceil() as i32;
+        let x_range = aabb.min.x.floor() as i32..=aabb.max.x.ceil() as i32;
+        let y_range = aabb.min.y.floor() as i32..=aabb.max.y.ceil() as i32;
+        let z_range = aabb.min.z.floor() as i32..=aabb.max.z.ceil() as i32;
 
         for bx in x_range {
             for by in y_range.clone() {
@@ -439,7 +462,8 @@ impl Camera {
             return;
         }
 
-        let current_speed = self.velocity.x * self.intent.move_dir.x + self.velocity.z * self.intent.move_dir.z;
+        let current_speed =
+            self.velocity.x * self.intent.move_dir.x + self.velocity.z * self.intent.move_dir.z;
         let add_speed = target_speed - current_speed;
         if add_speed <= 0.0 {
             return;
@@ -495,17 +519,21 @@ impl Camera {
 
     fn resolve_collisions(&mut self, world: &world::World, axis: u8) {
         let initial = self.player_aabb();
-        let x_range = initial.min.x.floor() as i32 ..= initial.max.x.ceil() as i32;
-        let y_range = initial.min.y.floor() as i32 ..= initial.max.y.ceil() as i32;
-        let z_range = initial.min.z.floor() as i32 ..= initial.max.z.ceil() as i32;
+        let x_range = initial.min.x.floor() as i32..=initial.max.x.ceil() as i32;
+        let y_range = initial.min.y.floor() as i32..=initial.max.y.ceil() as i32;
+        let z_range = initial.min.z.floor() as i32..=initial.max.z.ceil() as i32;
 
         for bx in x_range {
             for by in y_range.clone() {
                 for bz in z_range.clone() {
-                    if !world.get_block(bx, by, bz).is_solid() { continue; }
+                    if !world.get_block(bx, by, bz).is_solid() {
+                        continue;
+                    }
 
                     let aabb = self.player_aabb();
-                    if !aabb.intersects_block(bx, by, bz) { continue; }
+                    if !aabb.intersects_block(bx, by, bz) {
+                        continue;
+                    }
 
                     self.push_out_axis(aabb, bx, by, bz, axis);
                 }
@@ -530,7 +558,7 @@ impl Camera {
                     self.position.y -= aabb.max.y - by as f32 + EPSILON;
                 } else {
                     self.position.y += by as f32 + 1.0 - aabb.min.y + EPSILON;
-                    self.on_ground   = true;
+                    self.on_ground = true;
                 }
                 self.velocity.y = 0.0;
             }
@@ -556,7 +584,9 @@ pub struct CameraUniform {
 impl CameraUniform {
     pub fn new() -> Self {
         use cgmath::SquareMatrix;
-        Self { view_proj: Matrix4::identity().into() }
+        Self {
+            view_proj: Matrix4::identity().into(),
+        }
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera, aspect: f32) {

@@ -1,11 +1,11 @@
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    pub position:   [f32; 3],
+    pub position: [f32; 3],
     pub tex_coords: [f32; 2],
-    pub normal:     [f32; 3],
+    pub normal: [f32; 3],
     pub brightness: f32,
-    pub is_top:     f32,
+    pub is_top: f32,
     pub biome_tint: [f32; 3],
     /// x = warmth, y = moisture, z = lushness, w = stable per-face variation seed.
     pub surface_data: [f32; 4],

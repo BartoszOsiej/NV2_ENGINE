@@ -1,10 +1,10 @@
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
-use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::sync::Mutex;
 
 /// Block model definition loaded from JSON
@@ -66,21 +66,28 @@ impl BlockModel {
     /// Convert to normalized format with [top, bottom, front, back, right, left] textures
     pub fn normalize(&self) -> NormalizedBlockModel {
         match self {
-            BlockModel::Simple { name, textures, opaque, breakable } => {
-                NormalizedBlockModel {
-                    name: name.clone(),
-                    textures: textures.clone(),
-                    opaque: *opaque,
-                    breakable: *breakable,
-                }
-            }
-            BlockModel::Minecraft { parent, textures, name } => {
+            BlockModel::Simple {
+                name,
+                textures,
+                opaque,
+                breakable,
+            } => NormalizedBlockModel {
+                name: name.clone(),
+                textures: textures.clone(),
+                opaque: *opaque,
+                breakable: *breakable,
+            },
+            BlockModel::Minecraft {
+                parent,
+                textures,
+                name,
+            } => {
                 // Handle parent inheritance
                 let resolved_textures = Self::resolve_textures(parent.as_deref(), textures);
                 NormalizedBlockModel {
                     name: name.clone().unwrap_or_else(|| "unknown".to_string()),
                     textures: resolved_textures,
-                    opaque: true,  // Default for Minecraft models
+                    opaque: true,    // Default for Minecraft models
                     breakable: true, // Default for Minecraft models
                 }
             }
@@ -95,7 +102,14 @@ impl BlockModel {
             Some("block/cube_all") | Some("block/leaves") => {
                 // All faces use the same texture
                 if let Some(all_tex) = textures.get("all") {
-                    [all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone()]
+                    [
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                    ]
                 } else {
                     [
                         "unknown".to_string(),
@@ -107,40 +121,123 @@ impl BlockModel {
                     ]
                 }
             }
-            Some("block/cube_column") => {
-                [
-                    textures.get("end").or_else(|| textures.get("top")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("end").or_else(|| textures.get("bottom")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("side").or_else(|| textures.get("north")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("side").or_else(|| textures.get("south")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("side").or_else(|| textures.get("east")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("side").or_else(|| textures.get("west")).unwrap_or(&"unknown".to_string()).clone(),
-                ]
-            }
+            Some("block/cube_column") => [
+                textures
+                    .get("end")
+                    .or_else(|| textures.get("top"))
+                    .unwrap_or(&"unknown".to_string())
+                    .clone(),
+                textures
+                    .get("end")
+                    .or_else(|| textures.get("bottom"))
+                    .unwrap_or(&"unknown".to_string())
+                    .clone(),
+                textures
+                    .get("side")
+                    .or_else(|| textures.get("north"))
+                    .unwrap_or(&"unknown".to_string())
+                    .clone(),
+                textures
+                    .get("side")
+                    .or_else(|| textures.get("south"))
+                    .unwrap_or(&"unknown".to_string())
+                    .clone(),
+                textures
+                    .get("side")
+                    .or_else(|| textures.get("east"))
+                    .unwrap_or(&"unknown".to_string())
+                    .clone(),
+                textures
+                    .get("side")
+                    .or_else(|| textures.get("west"))
+                    .unwrap_or(&"unknown".to_string())
+                    .clone(),
+            ],
             Some("block/cube") => {
                 // Individual face textures
                 [
-                    textures.get("up").or_else(|| textures.get("top")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("down").or_else(|| textures.get("bottom")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("north").or_else(|| textures.get("front")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("south").or_else(|| textures.get("back")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("east").or_else(|| textures.get("right")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("west").or_else(|| textures.get("left")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures
+                        .get("up")
+                        .or_else(|| textures.get("top"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("down")
+                        .or_else(|| textures.get("bottom"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("north")
+                        .or_else(|| textures.get("front"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("south")
+                        .or_else(|| textures.get("back"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("east")
+                        .or_else(|| textures.get("right"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("west")
+                        .or_else(|| textures.get("left"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
                 ]
             }
             _ => {
                 // No parent or unknown parent - try to map individual textures
                 if let Some(all_tex) = textures.get("all") {
-                    return [all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone()];
+                    return [
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                        all_tex.clone(),
+                    ];
                 }
 
                 [
-                    textures.get("up").or_else(|| textures.get("top")).or_else(|| textures.get("end")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("down").or_else(|| textures.get("bottom")).or_else(|| textures.get("end")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("north").or_else(|| textures.get("front")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("south").or_else(|| textures.get("back")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("east").or_else(|| textures.get("right")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
-                    textures.get("west").or_else(|| textures.get("left")).or_else(|| textures.get("side")).unwrap_or(&"unknown".to_string()).clone(),
+                    textures
+                        .get("up")
+                        .or_else(|| textures.get("top"))
+                        .or_else(|| textures.get("end"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("down")
+                        .or_else(|| textures.get("bottom"))
+                        .or_else(|| textures.get("end"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("north")
+                        .or_else(|| textures.get("front"))
+                        .or_else(|| textures.get("side"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("south")
+                        .or_else(|| textures.get("back"))
+                        .or_else(|| textures.get("side"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("east")
+                        .or_else(|| textures.get("right"))
+                        .or_else(|| textures.get("side"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
+                    textures
+                        .get("west")
+                        .or_else(|| textures.get("left"))
+                        .or_else(|| textures.get("side"))
+                        .unwrap_or(&"unknown".to_string())
+                        .clone(),
                 ]
             }
         }
@@ -160,7 +257,7 @@ impl BlockModelLoader {
     pub fn load_all<P: AsRef<Path>>(dir: P) -> Result<HashMap<String, NormalizedBlockModel>> {
         let mut models = HashMap::new();
         let dir = dir.as_ref();
-        
+
         // Try multiple possible paths relative to the executable
         let possible_paths = vec![
             dir.to_path_buf(),
@@ -169,7 +266,7 @@ impl BlockModelLoader {
             Path::new("../../../Assets/Models/Block/").to_path_buf(),
             Path::new("./Assets/Models/Block/").to_path_buf(),
         ];
-        
+
         let mut found_path = None;
         for path in &possible_paths {
             if path.exists() {
@@ -177,7 +274,7 @@ impl BlockModelLoader {
                 break;
             }
         }
-        
+
         let dir = match found_path {
             Some(path) => path,
             None => {
@@ -188,15 +285,16 @@ impl BlockModelLoader {
                 return Ok(models);
             }
         };
-        
+
         eprintln!("✓ Found block models at: {:?}", dir);
-        
+
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            
-            if path.extension().map_or(false, |ext| ext == "json") {
-                let file_stem = path.file_stem()
+
+            if path.extension().is_some_and(|ext| ext == "json") {
+                let file_stem = path
+                    .file_stem()
                     .and_then(OsStr::to_str)
                     .unwrap_or("unknown")
                     .to_string();
@@ -222,7 +320,7 @@ impl BlockModelLoader {
                 }
             }
         }
-        
+
         // Populate global cache
         BLOCK_MODEL_CACHE.with(|cache| {
             if let Ok(mut cache_guard) = cache.lock() {
@@ -231,11 +329,11 @@ impl BlockModelLoader {
                 }
             }
         });
-        
+
         eprintln!("✓ Loaded {} block models", models.len());
         Ok(models)
     }
-    
+
     /// Load a single block model from JSON
     pub fn load_single<P: AsRef<Path>>(path: P, file_stem: &str) -> Result<NormalizedBlockModel> {
         let content = fs::read_to_string(path)?;
@@ -275,7 +373,14 @@ impl BlockModelLoader {
                 }
             }
             if let Some(first) = found.first() {
-                return [first.clone(), first.clone(), first.clone(), first.clone(), first.clone(), first.clone()];
+                return [
+                    first.clone(),
+                    first.clone(),
+                    first.clone(),
+                    first.clone(),
+                    first.clone(),
+                    first.clone(),
+                ];
             }
         }
 
@@ -285,15 +390,28 @@ impl BlockModelLoader {
     fn resolve_texture_map(map: &serde_json::Map<String, Value>) -> [String; 6] {
         let all = Self::get_texture_text(map, &["all"]);
         if let Some(all_tex) = all {
-            return [all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone(), all_tex.clone()];
+            return [
+                all_tex.clone(),
+                all_tex.clone(),
+                all_tex.clone(),
+                all_tex.clone(),
+                all_tex.clone(),
+                all_tex.clone(),
+            ];
         }
 
-        let top = Self::get_texture_text(map, &["up", "top"]).unwrap_or_else(|| "unknown".to_string());
-        let bottom = Self::get_texture_text(map, &["down", "bottom"]).unwrap_or_else(|| "unknown".to_string());
-        let north = Self::get_texture_text(map, &["north", "front", "side"]).unwrap_or_else(|| "unknown".to_string());
-        let south = Self::get_texture_text(map, &["south", "back", "side"]).unwrap_or_else(|| "unknown".to_string());
-        let east = Self::get_texture_text(map, &["east", "right", "side"]).unwrap_or_else(|| "unknown".to_string());
-        let west = Self::get_texture_text(map, &["west", "left", "side"]).unwrap_or_else(|| "unknown".to_string());
+        let top =
+            Self::get_texture_text(map, &["up", "top"]).unwrap_or_else(|| "unknown".to_string());
+        let bottom = Self::get_texture_text(map, &["down", "bottom"])
+            .unwrap_or_else(|| "unknown".to_string());
+        let north = Self::get_texture_text(map, &["north", "front", "side"])
+            .unwrap_or_else(|| "unknown".to_string());
+        let south = Self::get_texture_text(map, &["south", "back", "side"])
+            .unwrap_or_else(|| "unknown".to_string());
+        let east = Self::get_texture_text(map, &["east", "right", "side"])
+            .unwrap_or_else(|| "unknown".to_string());
+        let west = Self::get_texture_text(map, &["west", "left", "side"])
+            .unwrap_or_else(|| "unknown".to_string());
 
         [top, bottom, north, south, east, west]
     }
@@ -327,16 +445,16 @@ impl RecipeManager {
     pub fn load_all<P: AsRef<Path>>(dir: P) -> Result<HashMap<String, Recipe>> {
         let mut recipes = HashMap::new();
         let dir = dir.as_ref();
-        
+
         if !dir.exists() {
             return Ok(recipes);
         }
-        
+
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            
-            if path.extension().map_or(false, |ext| ext == "json") {
+
+            if path.extension().is_some_and(|ext| ext == "json") {
                 match Self::load_single(&path) {
                     Ok(recipe) => {
                         let name = match &recipe {
@@ -351,28 +469,25 @@ impl RecipeManager {
                 }
             }
         }
-        
+
         Ok(recipes)
     }
-    
+
     /// Load a single recipe from JSON
     pub fn load_single<P: AsRef<Path>>(path: P) -> Result<Recipe> {
         let content = fs::read_to_string(path)?;
         let recipe: Recipe = serde_json::from_str(&content)?;
         Ok(recipe)
     }
-    
+
     /// Validate a shapeless recipe against provided items
-    pub fn validate_shapeless(
-        recipe: &Recipe,
-        items: &[String],
-    ) -> bool {
+    pub fn validate_shapeless(recipe: &Recipe, items: &[String]) -> bool {
         match recipe {
             Recipe::Shapeless { ingredients, .. } => {
                 if ingredients.len() != items.len() {
                     return false;
                 }
-                
+
                 let mut required = ingredients.clone();
                 for item in items {
                     if let Some(pos) = required.iter().position(|r| r == item) {
@@ -386,12 +501,9 @@ impl RecipeManager {
             _ => false,
         }
     }
-    
+
     /// Validate a shaped recipe against a 3x3 grid
-    pub fn validate_shaped(
-        recipe: &Recipe,
-        grid: &[[Option<String>; 3]; 3],
-    ) -> bool {
+    pub fn validate_shaped(recipe: &Recipe, grid: &[[Option<String>; 3]; 3]) -> bool {
         match recipe {
             Recipe::Shaped { pattern, key, .. } => {
                 // Simple validation - could be enhanced for rotation/reflection
@@ -400,7 +512,7 @@ impl RecipeManager {
             _ => false,
         }
     }
-    
+
     fn match_pattern(
         pattern: &[String],
         key: &HashMap<char, String>,
@@ -409,16 +521,16 @@ impl RecipeManager {
         if pattern.len() != 3 {
             return false;
         }
-        
+
         for (y, pattern_row) in pattern.iter().enumerate() {
             if pattern_row.len() != 3 {
                 return false;
             }
-            
+
             for (x, pattern_char) in pattern_row.chars().enumerate() {
                 let required_item = key.get(&pattern_char);
                 let grid_item = &grid[y][x];
-                
+
                 match (required_item, grid_item) {
                     (None, None) => {} // Empty matches empty
                     (Some(req), Some(grid_val)) => {
@@ -430,7 +542,7 @@ impl RecipeManager {
                 }
             }
         }
-        
+
         true
     }
 }
@@ -438,7 +550,7 @@ impl RecipeManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_shapeless_recipe() {
         let recipe = Recipe::Shapeless {
@@ -449,12 +561,12 @@ mod tests {
                 count: 2,
             },
         };
-        
+
         assert!(RecipeManager::validate_shapeless(
             &recipe,
             &["stick".into(), "wood".into()]
         ));
-        
+
         assert!(!RecipeManager::validate_shapeless(
             &recipe,
             &["wood".into()]
@@ -474,7 +586,10 @@ pub fn ensure_subtitle_font() -> Result<Option<std::path::PathBuf>> {
     let dest_dir = Path::new("Assets/Fonts/Subtitles");
     if !dest_dir.exists() {
         if let Err(e) = fs::create_dir_all(dest_dir) {
-            eprintln!("Failed to create subtitle font directory {:?}: {}", dest_dir, e);
+            eprintln!(
+                "Failed to create subtitle font directory {:?}: {}",
+                dest_dir, e
+            );
             return Ok(None);
         }
     }
@@ -499,18 +614,19 @@ pub fn ensure_subtitle_font() -> Result<Option<std::path::PathBuf>> {
                     eprintln!("Moved subtitle font to {:?}", dest);
                     return Ok(Some(dest));
                 }
-                Err(rename_err) => {
-                    match fs::copy(&cand, &dest) {
-                        Ok(_) => {
-                            let _ = fs::remove_file(&cand);
-                            eprintln!("Copied subtitle font to {:?}", dest);
-                            return Ok(Some(dest));
-                        }
-                        Err(copy_err) => {
-                            eprintln!("Failed to move/copy subtitle font {:?}: {}, {}", cand, rename_err, copy_err);
-                        }
+                Err(rename_err) => match fs::copy(&cand, &dest) {
+                    Ok(_) => {
+                        let _ = fs::remove_file(&cand);
+                        eprintln!("Copied subtitle font to {:?}", dest);
+                        return Ok(Some(dest));
                     }
-                }
+                    Err(copy_err) => {
+                        eprintln!(
+                            "Failed to move/copy subtitle font {:?}: {}, {}",
+                            cand, rename_err, copy_err
+                        );
+                    }
+                },
             }
         }
     }

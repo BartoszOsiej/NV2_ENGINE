@@ -16,14 +16,14 @@ pub type TrainingSample = ([f32; 8], [f32; 4]);
 /// Locations whose current weather becomes training data.
 /// Picked to span very different biomes (desert, rainforest, tundra…).
 const SAMPLE_LOCATIONS: &[(f32, f32)] = &[
-    (52.2297, 21.0122), // Warsaw — temperate
-    (-1.2864, 36.8172), // Nairobi — highland
-    (25.2048, 55.2708), // Dubai — desert
-    (-3.1190, -60.0217), // Amazonas — rainforest
-    (64.1466, -21.9426), // Reykjavik — tundra
-    (39.9042, 116.4074), // Beijing — continental
+    (52.2297, 21.0122),   // Warsaw — temperate
+    (-1.2864, 36.8172),   // Nairobi — highland
+    (25.2048, 55.2708),   // Dubai — desert
+    (-3.1190, -60.0217),  // Amazonas — rainforest
+    (64.1466, -21.9426),  // Reykjavik — tundra
+    (39.9042, 116.4074),  // Beijing — continental
     (-33.8688, 151.2093), // Sydney — coastal
-    (51.5074, -0.1278), // London — maritime
+    (51.5074, -0.1278),   // London — maritime
 ];
 
 /// A single sample from the Open-Meteo API.
@@ -88,14 +88,14 @@ async fn fetch_location(client: &reqwest::Client, lat: f32, lon: f32) -> Option<
     // Map to the 8 AI features. Terrain height/slope stay generic; the
     // climate signals are the real-world part.
     let features: [f32; 8] = [
-        0.5,           // terrain_height (generic)
-        0.25,          // terrain_slope (generic)
-        temperature,   // biome_temperature ← real
-        humidity,      // biome_humidity ← real
-        0.5,           // nearby_water_distance (generic)
-        0.5,           // nearby_vegetation_count (generic)
-        0.7,           // light_level (generic daytime)
-        0.5,           // noise_seed_value
+        0.5,         // terrain_height (generic)
+        0.25,        // terrain_slope (generic)
+        temperature, // biome_temperature ← real
+        humidity,    // biome_humidity ← real
+        0.5,         // nearby_water_distance (generic)
+        0.5,         // nearby_vegetation_count (generic)
+        0.7,         // light_level (generic daytime)
+        0.5,         // noise_seed_value
     ];
 
     let target = target_vegetation(&features);

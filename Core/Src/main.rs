@@ -1,9 +1,9 @@
 #![allow(unused)]
 
+use cgmath::Vector3;
 use std::env;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use cgmath::Vector3;
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, DeviceId, WindowEvent},
@@ -12,17 +12,17 @@ use winit::{
     window::{CursorGrabMode, Window, WindowId},
 };
 
+mod assets;
 mod commands;
 mod crafting;
 mod egs;
 mod gameplay;
+mod input;
 mod interaction;
 mod inventory;
 mod renderer;
 mod settings;
 mod world;
-mod input;
-mod assets;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum AppMode {
@@ -35,27 +35,27 @@ const MAIN_MENU_ITEMS: [&str; 4] = ["New Game", "Load/Save", "Low-End-PC", "Quit
 const PAUSE_MENU_ITEMS: [&str; 5] = ["Resume", "Save", "Low-End-PC", "Save + Exit", "Exit"];
 
 struct App {
-    state:        Option<renderer::State>,
-    world:        world::World,
-    input:        input::InputState,
-    mode:         AppMode,
-    save_path:    PathBuf,
+    state: Option<renderer::State>,
+    world: world::World,
+    input: input::InputState,
+    mode: AppMode,
+    save_path: PathBuf,
     status_message: String,
     command_input: Option<String>,
     main_menu_selection: usize,
     pause_menu_selection: usize,
-    settings:     settings::SharedSettings,
-    last_frame:   Instant,
-    fps_accum:    f32,
-    fps_frames:   u32,
+    settings: settings::SharedSettings,
+    last_frame: Instant,
+    fps_accum: f32,
+    fps_frames: u32,
     /// NV2.0 gameplay session — clock, survival stats, hostiles, achievements.
-    session:      gameplay::GameSession,
+    session: gameplay::GameSession,
     /// `--autostart`: skip the main menu and start a new world immediately.
-    autostart:    bool,
+    autostart: bool,
     /// `--seed <n>`: deterministic world seed (QA / store screenshots).
-    fixed_seed:   Option<u32>,
+    fixed_seed: Option<u32>,
     /// Epic Online Services bridge (dynamic SDK load; no-op without EGS).
-    eos:          egs::EosBridge,
+    eos: egs::EosBridge,
 }
 
 impl App {
@@ -92,7 +92,11 @@ impl App {
     /// NV2.0: handle `/time`, `/eat`, `/heal`, `/attack`, `/tools`,
     /// `/repair`, `/achievements`, `/night` — returns the console message,
     /// or None when the command is not a gameplay command.
-    fn execute_gameplay_command(&mut self, command: &str, player: (f32, f32, f32)) -> Option<String> {
+    fn execute_gameplay_command(
+        &mut self,
+        command: &str,
+        player: (f32, f32, f32),
+    ) -> Option<String> {
         let cmd = command.to_ascii_lowercase();
         let arg = |prefix: &str| -> Option<f32> {
             let rest = cmd.strip_prefix(prefix)?.trim();
@@ -106,7 +110,11 @@ impl App {
                 self.session.clock.day_count + 1,
                 h,
                 m,
-                if self.session.clock.is_night() { "night" } else { "day" },
+                if self.session.clock.is_night() {
+                    "night"
+                } else {
+                    "day"
+                },
             ));
         }
         if cmd == "/day" || cmd == "/morning" {
@@ -131,7 +139,9 @@ impl App {
         }
         if cmd == "/attack" {
             let message = self.session.attack_nearest((player.0, player.2));
-            self.session.wear.use_tool(crate::world::BlockType::StonePickaxe);
+            self.session
+                .wear
+                .use_tool(crate::world::BlockType::StonePickaxe);
             return Some(message);
         }
         if cmd == "/tools" {
@@ -327,30 +337,30 @@ impl App {
         // Derive a well-distributed seed from wall-clock time.
         // Multiply+XOR folds both secs and nanos into all 32 output bits so
         // seeds remain distinct even when calls happen in the same second.
-        let now  = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let seed = (now.as_secs() as u32)
             .wrapping_mul(1_664_525)
             .wrapping_add(now.subsec_nanos())
             .wrapping_mul(1_013_904_223);
         let settings = settings::SharedSettings::new(settings::AppSettings::load());
         Self {
-            state:          None,
-            world:          world::World::new_with_settings(seed, settings.clone()),
-            input:          input::InputState::default(),
-            mode:           AppMode::MainMenu,
-            save_path:      Self::default_save_path(),
+            state: None,
+            world: world::World::new_with_settings(seed, settings.clone()),
+            input: input::InputState::default(),
+            mode: AppMode::MainMenu,
+            save_path: Self::default_save_path(),
             status_message: String::from("Use Up/Down to choose, Enter to activate."),
-            command_input:  None,
+            command_input: None,
             main_menu_selection: 0,
             pause_menu_selection: 0,
             settings,
-            last_frame:     Instant::now(),
-            fps_accum:      0.0,
-            fps_frames:     0,
-            session:        gameplay::GameSession::new(),
-            autostart:      false,
-            fixed_seed:     None,
-            eos:            egs::EosBridge::new(&egs::EpicLaunchArgs::from_args(
+            last_frame: Instant::now(),
+            fps_accum: 0.0,
+            fps_frames: 0,
+            session: gameplay::GameSession::new(),
+            autostart: false,
+            fixed_seed: None,
+            eos: egs::EosBridge::new(&egs::EpicLaunchArgs::from_args(
                 &env::args().collect::<Vec<_>>(),
             )),
         }
@@ -389,14 +399,23 @@ impl App {
             state.camera.position = Vector3::new(sx, sy, sz);
             state.camera.velocity = Vector3::new(0.0, 0.0, 0.0);
             state.camera.on_ground = true;
-            state.camera_uniform.update_view_proj(&state.camera, state.config.width as f32 / state.config.height as f32);
-            state.queue.write_buffer(&state.camera_buffer, 0, bytemuck::cast_slice(&[state.camera_uniform]));
+            state.camera_uniform.update_view_proj(
+                &state.camera,
+                state.config.width as f32 / state.config.height as f32,
+            );
+            state.queue.write_buffer(
+                &state.camera_buffer,
+                0,
+                bytemuck::cast_slice(&[state.camera_uniform]),
+            );
         }
     }
 
     fn save_game(&mut self) {
         match self.world.save_to_file(&self.save_path) {
-            Ok(_) => self.set_status_message(format!("World saved to {}", self.save_path.display())),
+            Ok(_) => {
+                self.set_status_message(format!("World saved to {}", self.save_path.display()))
+            }
             Err(err) => self.set_status_message(format!("Save failed: {}", err)),
         }
         self.update_window_title();
@@ -460,7 +479,7 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window_attrs = Window::default_attributes().with_title("NV2 Engine");
         let window = event_loop.create_window(window_attrs).unwrap();
-        
+
         // Robimy leak, żeby mieć &'static Window dla wgpu
         let window: &'static Window = Box::leak(Box::new(window));
 
@@ -477,8 +496,15 @@ impl ApplicationHandler for App {
             state.camera.position = Vector3::new(sx, sy, sz);
             state.camera.velocity = Vector3::new(0.0, 0.0, 0.0);
             state.camera.on_ground = true;
-            state.camera_uniform.update_view_proj(&state.camera, state.config.width as f32 / state.config.height as f32);
-            state.queue.write_buffer(&state.camera_buffer, 0, bytemuck::cast_slice(&[state.camera_uniform]));
+            state.camera_uniform.update_view_proj(
+                &state.camera,
+                state.config.width as f32 / state.config.height as f32,
+            );
+            state.queue.write_buffer(
+                &state.camera_buffer,
+                0,
+                bytemuck::cast_slice(&[state.camera_uniform]),
+            );
         }
         self.state = Some(state);
         self.update_window_title();
@@ -563,32 +589,33 @@ impl ApplicationHandler for App {
                         match self.mode {
                             AppMode::MainMenu => match key {
                                 KeyCode::ArrowUp | KeyCode::KeyW => {
-                                    self.main_menu_selection = (self.main_menu_selection + MAIN_MENU_ITEMS.len() - 1) % MAIN_MENU_ITEMS.len();
+                                    self.main_menu_selection =
+                                        (self.main_menu_selection + MAIN_MENU_ITEMS.len() - 1)
+                                            % MAIN_MENU_ITEMS.len();
                                 }
                                 KeyCode::ArrowDown | KeyCode::KeyS => {
-                                    self.main_menu_selection = (self.main_menu_selection + 1) % MAIN_MENU_ITEMS.len();
+                                    self.main_menu_selection =
+                                        (self.main_menu_selection + 1) % MAIN_MENU_ITEMS.len();
                                 }
-                                KeyCode::Enter | KeyCode::Space => {
-                                    match self.main_menu_selection {
-                                        0 => {
-                                            self.start_new_game();
+                                KeyCode::Enter | KeyCode::Space => match self.main_menu_selection {
+                                    0 => {
+                                        self.start_new_game();
+                                        lock_cursor = true;
+                                    }
+                                    1 => {
+                                        if self.load_game().is_ok() {
                                             lock_cursor = true;
                                         }
-                                        1 => {
-                                            if self.load_game().is_ok() {
-                                                lock_cursor = true;
-                                            }
-                                        }
-                                        2 => {
-                                            self.toggle_low_end_mode();
-                                        }
-                                        3 => {
-                                            event_loop.exit();
-                                            return;
-                                        }
-                                        _ => {}
                                     }
-                                }
+                                    2 => {
+                                        self.toggle_low_end_mode();
+                                    }
+                                    3 => {
+                                        event_loop.exit();
+                                        return;
+                                    }
+                                    _ => {}
+                                },
                                 KeyCode::KeyN => {
                                     self.start_new_game();
                                     lock_cursor = true;
@@ -625,7 +652,8 @@ impl ApplicationHandler for App {
                                 }
                                 KeyCode::KeyE if !repeated => {
                                     if let Some(state) = self.state.as_mut() {
-                                        let inventory_open = state.toggle_inventory(&mut self.world);
+                                        let inventory_open =
+                                            state.toggle_inventory(&mut self.world);
                                         self.set_status_message(if inventory_open {
                                             "Inventory opened."
                                         } else {
@@ -653,10 +681,13 @@ impl ApplicationHandler for App {
                             },
                             AppMode::PauseMenu => match key {
                                 KeyCode::ArrowUp | KeyCode::KeyW => {
-                                    self.pause_menu_selection = (self.pause_menu_selection + PAUSE_MENU_ITEMS.len() - 1) % PAUSE_MENU_ITEMS.len();
+                                    self.pause_menu_selection =
+                                        (self.pause_menu_selection + PAUSE_MENU_ITEMS.len() - 1)
+                                            % PAUSE_MENU_ITEMS.len();
                                 }
                                 KeyCode::ArrowDown | KeyCode::KeyS => {
-                                    self.pause_menu_selection = (self.pause_menu_selection + 1) % PAUSE_MENU_ITEMS.len();
+                                    self.pause_menu_selection =
+                                        (self.pause_menu_selection + 1) % PAUSE_MENU_ITEMS.len();
                                 }
                                 KeyCode::Enter | KeyCode::Space => {
                                     match self.pause_menu_selection {
@@ -713,7 +744,11 @@ impl ApplicationHandler for App {
                     }
                 }
             }
-            WindowEvent::MouseInput { state: m_state, button, .. } => {
+            WindowEvent::MouseInput {
+                state: m_state,
+                button,
+                ..
+            } => {
                 let pressed = m_state == winit::event::ElementState::Pressed;
                 if self.mode == AppMode::Playing && self.command_input.is_none() {
                     self.input.handle_mouse_button(button, pressed);
@@ -732,7 +767,8 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.input.set_cursor_position(position.x as f32, position.y as f32);
+                self.input
+                    .set_cursor_position(position.x as f32, position.y as f32);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 if self.mode == AppMode::Playing && self.command_input.is_none() {
@@ -780,9 +816,11 @@ impl ApplicationHandler for App {
                         // NV-2.0: wildlife — biome-appropriate animals wander
                         // around the player and flee when approached.
                         let cam_pos = state.camera.position;
-                        let mut animal_spawns: Vec<(gameplay::AnimalKind, (f32, f32, f32))> = Vec::new();
+                        let mut animal_spawns: Vec<(gameplay::AnimalKind, (f32, f32, f32))> =
+                            Vec::new();
                         if let Some((kind, pos)) =
-                            self.world.find_animal_spawn(cam_pos.x, cam_pos.z, state.camera.yaw)
+                            self.world
+                                .find_animal_spawn(cam_pos.x, cam_pos.z, state.camera.yaw)
                         {
                             animal_spawns.push((kind, pos));
                         }
@@ -809,23 +847,31 @@ impl ApplicationHandler for App {
                                     [t.u0, t.v0]
                                 }
                             };
-                            let mut cube = |ox: f32, oy: f32, oz: f32, sx: f32, sy: f32, sz: f32, color: [f32; 3], leg_swing: f32| {
-                                animal_instances.push(renderer::AnimalInstance {
-                                    pos: [
-                                        animal.x + (ox + leg_swing) * h_c - oz * h_s,
-                                        animal.y + oy + hop,
-                                        animal.z + (ox + leg_swing) * h_s + oz * h_c,
-                                    ],
-                                    _pad0: 0.0,
-                                    size: [sx, sy, sz],
-                                    _pad1: 0.0,
-                                    color,
-                                    _pad2: 0.0,
-                                    rot: animal.heading + sway,
-                                    _pad3: 0.0,
-                                    uv: fur_uv,
-                                });
-                            };
+                            let mut cube =
+                                |ox: f32,
+                                 oy: f32,
+                                 oz: f32,
+                                 sx: f32,
+                                 sy: f32,
+                                 sz: f32,
+                                 color: [f32; 3],
+                                 leg_swing: f32| {
+                                    animal_instances.push(renderer::AnimalInstance {
+                                        pos: [
+                                            animal.x + (ox + leg_swing) * h_c - oz * h_s,
+                                            animal.y + oy + hop,
+                                            animal.z + (ox + leg_swing) * h_s + oz * h_c,
+                                        ],
+                                        _pad0: 0.0,
+                                        size: [sx, sy, sz],
+                                        _pad1: 0.0,
+                                        color,
+                                        _pad2: 0.0,
+                                        rot: animal.heading + sway,
+                                        _pad3: 0.0,
+                                        uv: fur_uv,
+                                    });
+                                };
                             match animal.kind {
                                 gameplay::AnimalKind::Deer => {
                                     cube(0.0, 0.50, 0.0, 0.95, 0.55, 0.45, col, 0.0);
@@ -892,8 +938,12 @@ impl ApplicationHandler for App {
                     self.input.clear_frame();
 
                     let (ui_mode, ui_selection) = match self.mode {
-                        AppMode::MainMenu => (renderer::UiMode::MainMenu, Some(self.main_menu_selection)),
-                        AppMode::PauseMenu => (renderer::UiMode::PauseMenu, Some(self.pause_menu_selection)),
+                        AppMode::MainMenu => {
+                            (renderer::UiMode::MainMenu, Some(self.main_menu_selection))
+                        }
+                        AppMode::PauseMenu => {
+                            (renderer::UiMode::PauseMenu, Some(self.pause_menu_selection))
+                        }
                         AppMode::Playing => (renderer::UiMode::None, None),
                     };
 
@@ -918,7 +968,11 @@ impl ApplicationHandler for App {
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
             let capture_mouse = self.mode == AppMode::Playing
                 && self.command_input.is_none()
-                && self.state.as_ref().map(|state| state.input_captured).unwrap_or(false);
+                && self
+                    .state
+                    .as_ref()
+                    .map(|state| state.input_captured)
+                    .unwrap_or(false);
             if capture_mouse {
                 self.input.accumulate_mouse(dx, dy);
             }

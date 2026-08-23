@@ -2,8 +2,7 @@ use anyhow::Result;
 
 use super::{
     text::{TextAlignment, TextRenderer},
-    UiPanel,
-    UiMode,
+    UiMode, UiPanel,
 };
 
 const MENU_TITLE_MAIN: &str = "NVENGINE";
@@ -52,12 +51,18 @@ impl MenuRenderer {
             WHITE,
         )?;
 
-        let selected = selected_index.unwrap_or(0).min(menu.items.len().saturating_sub(1));
+        let selected = selected_index
+            .unwrap_or(0)
+            .min(menu.items.len().saturating_sub(1));
         let total_height = self.item_spacing_px * menu.items.len().saturating_sub(1) as f32;
         let mut y = screen_h as f32 * 0.5 - total_height * 0.5;
 
         for (index, item) in menu.items.iter().enumerate() {
-            let color = if index == selected { SELECTED_TEXT } else { WHITE };
+            let color = if index == selected {
+                SELECTED_TEXT
+            } else {
+                WHITE
+            };
             text_renderer.draw_text_tinted(
                 device,
                 queue,
@@ -86,7 +91,9 @@ impl MenuRenderer {
         };
 
         let (screen_w, screen_h) = text_renderer.screen_size();
-        let selected = selected_index.unwrap_or(0).min(menu.items.len().saturating_sub(1));
+        let selected = selected_index
+            .unwrap_or(0)
+            .min(menu.items.len().saturating_sub(1));
         let mut max_width: f32 = 260.0;
         let mut item_height: f32 = 34.0;
         for item in &menu.items {
@@ -121,7 +128,11 @@ struct MenuDefinition {
 
 impl MenuDefinition {
     fn for_mode(mode: UiMode, low_end_enabled: bool) -> Option<Self> {
-        let low_end_label = if low_end_enabled { "LOW-END-PC: ON" } else { "LOW-END-PC: OFF" };
+        let low_end_label = if low_end_enabled {
+            "LOW-END-PC: ON"
+        } else {
+            "LOW-END-PC: OFF"
+        };
         match mode {
             UiMode::MainMenu => Some(Self {
                 title: MENU_TITLE_MAIN,

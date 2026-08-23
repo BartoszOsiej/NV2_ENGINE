@@ -62,7 +62,10 @@ impl Mlp {
     /// Initialisation is seeded and deterministic: two `new()` calls with the
     /// same `arch` produce identical weights (reproducible worlds + tests).
     pub fn new(arch: &[usize]) -> Self {
-        assert!(arch.len() >= 2, "an MLP needs at least an input and output layer");
+        assert!(
+            arch.len() >= 2,
+            "an MLP needs at least an input and output layer"
+        );
         let mut state: u64 = 0x5EED_5EED_0000_0001;
         let mut weights = Vec::with_capacity(arch.len() - 1);
         let mut biases = Vec::with_capacity(arch.len() - 1);
@@ -209,7 +212,7 @@ impl Mlp {
                     self.weights[k][[i, j]] -= update;
                 }
             }
-            let bias_update = (&(learning_rate * &delta)).mapv(|d| d.clamp(-1.0, 1.0));
+            let bias_update = (learning_rate * &delta).mapv(|d| d.clamp(-1.0, 1.0));
             self.biases[k] -= &bias_update;
 
             if k > 0 {
@@ -300,9 +303,7 @@ impl MeMLP {
 
     /// Total trainable parameters across every module.
     pub fn param_count(&self) -> usize {
-        self.vegetation.param_count()
-            + self.biome.param_count()
-            + self.texture.param_count()
+        self.vegetation.param_count() + self.biome.param_count() + self.texture.param_count()
     }
 }
 
@@ -449,7 +450,10 @@ mod tests {
         let target = [1.0, 0.0];
         let loss1 = mlp.train(&input, &target, 0.1);
         let loss2 = mlp.train(&input, &target, 0.1);
-        assert!(loss2 <= loss1 * 1.05, "loss should decrease: {loss1} -> {loss2}");
+        assert!(
+            loss2 <= loss1 * 1.05,
+            "loss should decrease: {loss1} -> {loss2}"
+        );
     }
 
     #[test]
@@ -460,7 +464,10 @@ mod tests {
         for _ in 0..200 {
             last = mlp.train(&input, &target, 0.2);
         }
-        assert!(last < 0.2, "model should fit the pattern, final loss {last}");
+        assert!(
+            last < 0.2,
+            "model should fit the pattern, final loss {last}"
+        );
         let out = mlp.forward(&input);
         let pred = argmax(&out);
         assert_eq!(pred, 1);

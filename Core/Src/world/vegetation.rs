@@ -150,7 +150,12 @@ impl VegetationGenerator {
             }
 
             let slope = slope_at(generator, wx, wz);
-            let kind = choose_tree_kind(sample.definition.tree_types, world_seed.wrapping_add(1_101), wx, wz);
+            let kind = choose_tree_kind(
+                sample.definition.tree_types,
+                world_seed.wrapping_add(1_101),
+                wx,
+                wz,
+            );
             let definition = tree_definition(kind, sample.biome);
             if slope > definition.max_slope {
                 return;
@@ -216,79 +221,92 @@ impl VegetationGenerator {
     fn place_ai_vegetation(&self, world: &mut World, generator: &BiomeGenerator, cx: i32, cz: i32) {
         let world_seed = generator.seed() as i64;
 
-        for_each_chunk_cell(cx, cz, AI_VEGETATION_CELL_SIZE, world_seed, 4_001, |wx, wz| {
-            let sample = generator.sample_column(wx, wz);
+        for_each_chunk_cell(
+            cx,
+            cz,
+            AI_VEGETATION_CELL_SIZE,
+            world_seed,
+            4_001,
+            |wx, wz| {
+                let sample = generator.sample_column(wx, wz);
 
-            // Skip if on water, snow or other unsuitable surfaces.
-            if sample.water_top != sample.surface
-                || !(supports_grass_surface(sample.surface_block)
-                    || is_rocky_surface(sample.surface_block))
-            {
-                return;
-            }
+                // Skip if on water, snow or other unsuitable surfaces.
+                if sample.water_top != sample.surface
+                    || !(supports_grass_surface(sample.surface_block)
+                        || is_rocky_surface(sample.surface_block))
+                {
+                    return;
+                }
 
-            let Some(surface_y) = surface_y_at(generator, wx, wz) else {
-                return;
-            };
+                let Some(surface_y) = surface_y_at(generator, wx, wz) else {
+                    return;
+                };
 
-            // Per-biome cover density (fraction of suitable columns).
-            let density = match sample.biome {
-                BiomeId::Plains => 0.10,
-                BiomeId::Forest => 0.16,
-                BiomeId::DarkForest => 0.13,
-                BiomeId::Swamp => 0.12,
-                BiomeId::Taiga => 0.07,
-                BiomeId::Mountains => 0.05,
-                _ => 0.0,
-            };
-            if density <= 0.0 {
-                return;
-            }
+                // Per-biome cover density (fraction of suitable columns).
+                let density = match sample.biome {
+                    BiomeId::Plains => 0.10,
+                    BiomeId::Forest => 0.16,
+                    BiomeId::DarkForest => 0.13,
+                    BiomeId::Swamp => 0.12,
+                    BiomeId::Taiga => 0.07,
+                    BiomeId::Mountains => 0.05,
+                    _ => 0.0,
+                };
+                if density <= 0.0 {
+                    return;
+                }
 
-            // Cluster noise: low-frequency field raises/lowers the local
-            // density so cover grows in natural clumps, never a uniform grid.
-            let cluster = noise2_01(world_seed.wrapping_add(4_031), wx, wz, 0.045);
-            let effective = density * (0.25 + 0.75 * cluster);
-            let local = noise2_01(world_seed.wrapping_add(9_999), wx, wz, 0.23);
-            if local > effective {
-                return;
-            }
+                // Cluster noise: low-frequency field raises/lowers the local
+                // density so cover grows in natural clumps, never a uniform grid.
+                let cluster = noise2_01(world_seed.wrapping_add(4_031), wx, wz, 0.045);
+                let effective = density * (0.25 + 0.75 * cluster);
+                let local = noise2_01(world_seed.wrapping_add(9_999), wx, wz, 0.23);
+                if local > effective {
+                    return;
+                }
 
-            // AI features (8 inputs, matching the trained model).
-            let height_normalized = (surface_y as f32 / CHUNK_H as f32).min(1.0);
-            let slope = slope_at(generator, wx, wz) as f32 / 10.0;
-            let temperature = sample.temperature as f32;
-            let humidity = sample.humidity as f32;
-            let water_dist = 0.5f32;
-            let veg_count = 0.5f32;
-            let light_level = 0.7f32;
-            let noise_seed = cluster as f32;
+                // AI features (8 inputs, matching the trained model).
+                let height_normalized = (surface_y as f32 / CHUNK_H as f32).min(1.0);
+                let slope = slope_at(generator, wx, wz) as f32 / 10.0;
+                let temperature = sample.temperature as f32;
+                let humidity = sample.humidity as f32;
+                let water_dist = 0.5f32;
+                let veg_count = 0.5f32;
+                let light_level = 0.7f32;
+                let noise_seed = cluster as f32;
 
-            let features = [
-                height_normalized, slope, temperature, humidity,
-                water_dist, veg_count, light_level, noise_seed,
-            ];
+                let features = [
+                    height_normalized,
+                    slope,
+                    temperature,
+                    humidity,
+                    water_dist,
+                    veg_count,
+                    light_level,
+                    noise_seed,
+                ];
 
-            // The AI prefers a class; the biome + surface pick the real block.
-            let (ai_block, _confidence) = world.ai_system.predict_vegetation(&features);
-            let block = realistic_cover(sample.biome, sample.surface_block, ai_block, local);
-            if block == BlockType::Air {
-                return;
-            }
+                // The AI prefers a class; the biome + surface pick the real block.
+                let (ai_block, _confidence) = world.ai_system.predict_vegetation(&features);
+                let block = realistic_cover(sample.biome, sample.surface_block, ai_block, local);
+                if block == BlockType::Air {
+                    return;
+                }
 
-            let chunk_cx = (wx >> 4) as i32;
-            let chunk_cz = (wz >> 4) as i32;
-            if chunk_cx == cx && chunk_cz == cz {
-                if let Some(chunk) = world.chunks.get_mut(&(cx, cz)) {
-                    let lx = (wx & 15) as usize;
-                    let lz = (wz & 15) as usize;
-                    let ly = (surface_y + 1) as usize;
-                    if ly < CHUNK_H {
-                        chunk.set(lx, ly, lz, block);
+                let chunk_cx = (wx >> 4);
+                let chunk_cz = (wz >> 4);
+                if chunk_cx == cx && chunk_cz == cz {
+                    if let Some(chunk) = world.chunks.get_mut(&(cx, cz)) {
+                        let lx = (wx & 15) as usize;
+                        let lz = (wz & 15) as usize;
+                        let ly = (surface_y + 1) as usize;
+                        if ly < CHUNK_H {
+                            chunk.set(lx, ly, lz, block);
+                        }
                     }
                 }
-            }
-        });
+            },
+        );
     }
 }
 
@@ -308,7 +326,12 @@ fn is_rocky_surface(block: BlockType) -> bool {
 
 /// The physically plausible cover block for a (biome, surface) pair, given
 /// the AI's preference. Air means "nothing grows here".
-fn realistic_cover(biome: BiomeId, surface: BlockType, ai_block: BlockType, rand: f64) -> BlockType {
+fn realistic_cover(
+    biome: BiomeId,
+    surface: BlockType,
+    ai_block: BlockType,
+    rand: f64,
+) -> BlockType {
     match biome {
         // Rocky slopes: scree/pebbles, nothing else.
         BiomeId::Mountains => {
@@ -448,20 +471,42 @@ fn build_trunk_plan(
 }
 
 fn trunk_plan_is_valid(generator: &BiomeGenerator, plan: &TreePlan) -> bool {
-    plan.trunk.iter().all(|block| trunk_position_is_valid(generator, block.wx, block.wy, block.wz))
-        && plan.extras.iter().all(|block| trunk_position_is_valid(generator, block.wx, block.wy, block.wz))
+    plan.trunk
+        .iter()
+        .all(|block| trunk_position_is_valid(generator, block.wx, block.wy, block.wz))
+        && plan
+            .extras
+            .iter()
+            .all(|block| trunk_position_is_valid(generator, block.wx, block.wy, block.wz))
 }
 
 fn apply_trunk_plan(world: &mut World, plan: &TreePlan) {
     for placement in &plan.trunk {
-        world.set_block_if_allowed(placement.wx, placement.wy, placement.wz, placement.block, placement.rule);
+        world.set_block_if_allowed(
+            placement.wx,
+            placement.wy,
+            placement.wz,
+            placement.block,
+            placement.rule,
+        );
     }
     for placement in &plan.extras {
-        world.set_block_if_allowed(placement.wx, placement.wy, placement.wz, placement.block, placement.rule);
+        world.set_block_if_allowed(
+            placement.wx,
+            placement.wy,
+            placement.wz,
+            placement.block,
+            placement.rule,
+        );
     }
 }
 
-fn apply_canopy(world: &mut World, generator: &BiomeGenerator, biome: BiomeId, canopy: Vec<WorldPos>) {
+fn apply_canopy(
+    world: &mut World,
+    generator: &BiomeGenerator,
+    biome: BiomeId,
+    canopy: Vec<WorldPos>,
+) {
     let canopy_block = leaf_block_for_biome(biome);
     for position in canopy {
         if canopy_position_is_valid(generator, position.x, position.y, position.z) {
@@ -486,27 +531,64 @@ fn leaf_block_for_biome(biome: BiomeId) -> BlockType {
 }
 
 mod canopy_builder {
-    use super::{dedup_positions, collect_conical, collect_irregular_blob, collect_layered_discs, collect_sphere};
+    use super::{
+        collect_conical, collect_irregular_blob, collect_layered_discs, collect_sphere,
+        dedup_positions,
+    };
     use super::{BiomeId, CanopyAnchor, CanopyRng, WorldPos, DARK_OAK_LAYERS, SWAMP_LAYERS};
 
-    pub(super) fn build_canopy(anchor: CanopyAnchor, biome: BiomeId, rng: CanopyRng) -> Vec<WorldPos> {
+    pub(super) fn build_canopy(
+        anchor: CanopyAnchor,
+        biome: BiomeId,
+        rng: CanopyRng,
+    ) -> Vec<WorldPos> {
         let mut canopy = Vec::new();
 
         match biome {
             BiomeId::Plains => {
-                collect_sphere(anchor.top.x, anchor.top.y, anchor.top.z, 1, 1, 1, &mut canopy);
+                collect_sphere(
+                    anchor.top.x,
+                    anchor.top.y,
+                    anchor.top.z,
+                    1,
+                    1,
+                    1,
+                    &mut canopy,
+                );
                 canopy.push(WorldPos::new(anchor.top.x, anchor.top.y + 1, anchor.top.z));
             }
             BiomeId::Forest => {
-                collect_irregular_blob(anchor.top.x, anchor.top.y, anchor.top.z, 2, 2, 2, 0.24, rng, &mut canopy);
+                collect_irregular_blob(
+                    anchor.top.x,
+                    anchor.top.y,
+                    anchor.top.z,
+                    2,
+                    2,
+                    2,
+                    0.24,
+                    rng,
+                    &mut canopy,
+                );
                 canopy.push(WorldPos::new(anchor.top.x, anchor.top.y + 1, anchor.top.z));
             }
             BiomeId::DarkForest => {
-                collect_layered_discs(anchor.top.x, anchor.top.y, anchor.top.z, DARK_OAK_LAYERS, &mut canopy);
+                collect_layered_discs(
+                    anchor.top.x,
+                    anchor.top.y,
+                    anchor.top.z,
+                    DARK_OAK_LAYERS,
+                    &mut canopy,
+                );
                 canopy.push(WorldPos::new(anchor.top.x, anchor.top.y + 1, anchor.top.z));
             }
             BiomeId::Swamp => {
-                collect_layered_discs(anchor.top.x, anchor.top.y - 1, anchor.top.z, SWAMP_LAYERS, &mut canopy);
+                collect_layered_discs(
+                    anchor.top.x,
+                    anchor.top.y - 1,
+                    anchor.top.z,
+                    SWAMP_LAYERS,
+                    &mut canopy,
+                );
                 if rng.sample2(211, anchor.top.x, anchor.top.z, 0.61) > 0.48 {
                     canopy.push(WorldPos::new(anchor.top.x, anchor.top.y + 1, anchor.top.z));
                 }
@@ -514,10 +596,25 @@ mod canopy_builder {
             BiomeId::Taiga | BiomeId::Mountains => {
                 let cone_height = anchor.height.clamp(4, 6);
                 let base_radius = if anchor.height >= 9 { 3 } else { 2 };
-                collect_conical(anchor.top.x, anchor.top.y, anchor.top.z, cone_height, base_radius, &mut canopy);
+                collect_conical(
+                    anchor.top.x,
+                    anchor.top.y,
+                    anchor.top.z,
+                    cone_height,
+                    base_radius,
+                    &mut canopy,
+                );
             }
             _ => {
-                collect_sphere(anchor.top.x, anchor.top.y, anchor.top.z, 2, 1, 2, &mut canopy);
+                collect_sphere(
+                    anchor.top.x,
+                    anchor.top.y,
+                    anchor.top.z,
+                    2,
+                    1,
+                    2,
+                    &mut canopy,
+                );
             }
         }
 
@@ -624,17 +721,21 @@ fn dedup_positions(positions: &mut Vec<WorldPos>) {
     positions.dedup();
 }
 
-fn trunk_offset(kind: TreeKind, world_seed: i64, step: i32, height: i32, wx: i32, wz: i32) -> (i32, i32) {
+fn trunk_offset(
+    kind: TreeKind,
+    world_seed: i64,
+    step: i32,
+    height: i32,
+    wx: i32,
+    wz: i32,
+) -> (i32, i32) {
     match kind {
         TreeKind::DarkOak => (0, 0),
-        TreeKind::DeadTree => {
-            if step > height / 2 {
-                let (dx, dz) = direction_from_seed(world_seed.wrapping_add(5_361), wx, wz);
-                let bend = ((step - height / 2) as f64 / (height - height / 2).max(1) as f64).round() as i32;
-                (dx * bend.min(1), dz * bend.min(1))
-            } else {
-                (0, 0)
-            }
+        TreeKind::DeadTree if step > height / 2 => {
+            let (dx, dz) = direction_from_seed(world_seed.wrapping_add(5_361), wx, wz);
+            let bend =
+                ((step - height / 2) as f64 / (height - height / 2).max(1) as f64).round() as i32;
+            (dx * bend.min(1), dz * bend.min(1))
         }
         _ => (0, 0),
     }
@@ -676,7 +777,10 @@ fn supports_grass_surface(block: BlockType) -> bool {
 }
 
 fn supports_flower_surface(block: BlockType) -> bool {
-    matches!(block, BlockType::Grass | BlockType::BloomFloor | BlockType::ForestFloor)
+    matches!(
+        block,
+        BlockType::Grass | BlockType::BloomFloor | BlockType::ForestFloor
+    )
 }
 
 fn supports_shrub_surface(block: BlockType) -> bool {
@@ -787,7 +891,14 @@ fn cell_anchor(seed: i64, cell_x: i32, cell_z: i32, cell_size: i32, margin: i32)
     let max_z = cell_z * cell_size + cell_size - margin - 1;
     (
         choose_range(seed, min_x, max_x.max(min_x), cell_x, cell_z, 0.73),
-        choose_range(seed.wrapping_add(19), min_z, max_z.max(min_z), cell_x, cell_z, 0.79),
+        choose_range(
+            seed.wrapping_add(19),
+            min_z,
+            max_z.max(min_z),
+            cell_x,
+            cell_z,
+            0.79,
+        ),
     )
 }
 
@@ -877,7 +988,11 @@ mod tests {
             top: WorldPos::new(0, 71, 0),
             height: 7,
         };
-        let canopy = canopy_builder::build_canopy(anchor, BiomeId::DarkForest, CanopyRng::for_anchor(42, anchor));
+        let canopy = canopy_builder::build_canopy(
+            anchor,
+            BiomeId::DarkForest,
+            CanopyRng::for_anchor(42, anchor),
+        );
         let canopy: HashSet<_> = canopy.into_iter().collect();
 
         for (dy, radius) in DARK_OAK_LAYERS.iter().copied() {
@@ -885,7 +1000,11 @@ mod tests {
                 for dx in -radius..=radius {
                     if dx * dx + dz * dz <= radius * radius + 1 {
                         assert!(
-                            canopy.contains(&WorldPos::new(anchor.top.x + dx, anchor.top.y + dy, anchor.top.z + dz)),
+                            canopy.contains(&WorldPos::new(
+                                anchor.top.x + dx,
+                                anchor.top.y + dy,
+                                anchor.top.z + dz
+                            )),
                             "missing dark canopy block at layer {dy} offset ({dx}, {dz})"
                         );
                     }
@@ -926,7 +1045,13 @@ mod tests {
             }
         }
 
-        assert!(tree_blocks > 1_000, "expected world-space tree pass to produce trees, got {tree_blocks}");
-        assert!(cover_blocks > 400, "expected vegetation rewrite to produce cover, got {cover_blocks}");
+        assert!(
+            tree_blocks > 1_000,
+            "expected world-space tree pass to produce trees, got {tree_blocks}"
+        );
+        assert!(
+            cover_blocks > 400,
+            "expected vegetation rewrite to produce cover, got {cover_blocks}"
+        );
     }
 }

@@ -2,18 +2,33 @@
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum DecorationType { Bush, Flower, Grass, Fern }
+pub enum DecorationType {
+    Bush,
+    Flower,
+    Grass,
+    Fern,
+}
 
 #[derive(Clone, Debug)]
 pub struct DecorationInstance {
-    pub x: f32, pub y: f32, pub z: f32,
-    pub rotation: f32, pub scale: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub rotation: f32,
+    pub scale: f32,
     pub decoration_type: DecorationType,
 }
 
 impl DecorationInstance {
     pub fn new(x: f32, y: f32, z: f32, dt: DecorationType) -> Self {
-        Self { x, y, z, rotation: 0.0, scale: 1.0, decoration_type: dt }
+        Self {
+            x,
+            y,
+            z,
+            rotation: 0.0,
+            scale: 1.0,
+            decoration_type: dt,
+        }
     }
     pub fn randomize(&mut self, seed: u64) {
         let mut rng = seed;
@@ -25,11 +40,17 @@ impl DecorationInstance {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DecorationChunk { pub decorations: Vec<DecorationInstance> }
+pub struct DecorationChunk {
+    pub decorations: Vec<DecorationInstance>,
+}
 
 impl DecorationChunk {
-    pub fn new() -> Self { Default::default() }
-    pub fn add(&mut self, i: DecorationInstance) { self.decorations.push(i); }
+    pub fn new() -> Self {
+        Default::default()
+    }
+    pub fn add(&mut self, i: DecorationInstance) {
+        self.decorations.push(i);
+    }
 }
 
 pub struct DecorationManager {
@@ -38,15 +59,24 @@ pub struct DecorationManager {
 }
 
 impl DecorationManager {
-    pub fn new() -> Self { Self { chunks: HashMap::new(), total: 0 } }
+    pub fn new() -> Self {
+        Self {
+            chunks: HashMap::new(),
+            total: 0,
+        }
+    }
     pub fn add(&mut self, x: f32, y: f32, z: f32, dt: DecorationType) {
         let cx = (x / 16.0).floor() as i32;
         let cz = (z / 16.0).floor() as i32;
         let mut inst = DecorationInstance::new(x, y, z, dt);
-        inst.randomize((cx as u64) * 73856093 ^ (cz as u64) * 19349663);
-        self.chunks.entry((cx, cz)).or_insert_with(Default::default).add(inst);
+        inst.randomize(((cx as u64) * 73856093) ^ ((cz as u64) * 19349663));
+        self.chunks.entry((cx, cz)).or_default().add(inst);
         self.total += 1;
     }
-    pub fn get(&self, cx: i32, cz: i32) -> Option<&DecorationChunk> { self.chunks.get(&(cx, cz)) }
-    pub fn total(&self) -> usize { self.total }
+    pub fn get(&self, cx: i32, cz: i32) -> Option<&DecorationChunk> {
+        self.chunks.get(&(cx, cz))
+    }
+    pub fn total(&self) -> usize {
+        self.total
+    }
 }

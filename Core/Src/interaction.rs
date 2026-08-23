@@ -1,4 +1,7 @@
-use std::{array, collections::{HashSet, VecDeque}};
+use std::{
+    array,
+    collections::{HashSet, VecDeque},
+};
 
 use cgmath::Vector3;
 use winit::event::MouseButton;
@@ -32,13 +35,8 @@ const TRUNK_NEIGHBOR_OFFSETS: [(i32, i32, i32); 6] = [
     (0, 0, 1),
     (0, 0, -1),
 ];
-const LEAF_NEIGHBOR_OFFSETS: [(i32, i32, i32); 5] = [
-    (0, 1, 0),
-    (1, 0, 0),
-    (-1, 0, 0),
-    (0, 0, 1),
-    (0, 0, -1),
-];
+const LEAF_NEIGHBOR_OFFSETS: [(i32, i32, i32); 5] =
+    [(0, 1, 0), (1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1)];
 
 #[derive(Clone, Copy, Debug)]
 pub struct SlotRect {
@@ -96,7 +94,10 @@ pub enum UiSlotId {
 
 impl UiSlotId {
     pub fn is_output(self) -> bool {
-        matches!(self, UiSlotId::PlayerCraftingOutput | UiSlotId::NVCrafterOutput)
+        matches!(
+            self,
+            UiSlotId::PlayerCraftingOutput | UiSlotId::NVCrafterOutput
+        )
     }
 }
 
@@ -114,12 +115,21 @@ pub struct InventoryLayout {
 }
 
 impl InventoryLayout {
-    pub fn slot_at(&self, cursor_x: f32, cursor_y: f32, gui_type: Option<GuiType>) -> Option<UiSlotId> {
+    pub fn slot_at(
+        &self,
+        cursor_x: f32,
+        cursor_y: f32,
+        gui_type: Option<GuiType>,
+    ) -> Option<UiSlotId> {
         match gui_type {
-            None => self.hotbar_slots.iter().enumerate().find_map(|(offset, rect)| {
-                rect.contains(cursor_x, cursor_y)
-                    .then_some(UiSlotId::Inventory(HOTBAR_START + offset))
-            }),
+            None => self
+                .hotbar_slots
+                .iter()
+                .enumerate()
+                .find_map(|(offset, rect)| {
+                    rect.contains(cursor_x, cursor_y)
+                        .then_some(UiSlotId::Inventory(HOTBAR_START + offset))
+                }),
             Some(GuiType::Inventory) => {
                 if let Some(rect) = self.player_crafting_output {
                     if rect.contains(cursor_x, cursor_y) {
@@ -133,9 +143,13 @@ impl InventoryLayout {
                     }
                 }
 
-                self.player_slot_rects.iter().enumerate().find_map(|(index, rect)| {
-                    rect.contains(cursor_x, cursor_y).then_some(UiSlotId::Inventory(index))
-                })
+                self.player_slot_rects
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, rect)| {
+                        rect.contains(cursor_x, cursor_y)
+                            .then_some(UiSlotId::Inventory(index))
+                    })
             }
             Some(GuiType::NVCrafter) => {
                 if let Some(rect) = self.nvcrafter_output {
@@ -150,9 +164,13 @@ impl InventoryLayout {
                     }
                 }
 
-                self.player_slot_rects.iter().enumerate().find_map(|(index, rect)| {
-                    rect.contains(cursor_x, cursor_y).then_some(UiSlotId::Inventory(index))
-                })
+                self.player_slot_rects
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, rect)| {
+                        rect.contains(cursor_x, cursor_y)
+                            .then_some(UiSlotId::Inventory(index))
+                    })
             }
         }
     }
@@ -198,10 +216,14 @@ impl InventoryLayout {
     }
 }
 
-pub fn build_inventory_layout(screen_size: (u32, u32), gui_type: Option<GuiType>) -> InventoryLayout {
+pub fn build_inventory_layout(
+    screen_size: (u32, u32),
+    gui_type: Option<GuiType>,
+) -> InventoryLayout {
     let screen_w = screen_size.0 as f32;
     let screen_h = screen_size.1 as f32;
-    let grid_width = SLOT_SIZE * HOTBAR_SLOT_COUNT as f32 + SLOT_GAP * (HOTBAR_SLOT_COUNT as f32 - 1.0);
+    let grid_width =
+        SLOT_SIZE * HOTBAR_SLOT_COUNT as f32 + SLOT_GAP * (HOTBAR_SLOT_COUNT as f32 - 1.0);
     let hotbar_panel_width = grid_width + PANEL_PADDING * 2.0;
     let hotbar_panel_height = SLOT_SIZE + PANEL_PADDING * 2.0;
     let hotbar_x = (screen_w - hotbar_panel_width) * 0.5;
@@ -213,7 +235,11 @@ pub fn build_inventory_layout(screen_size: (u32, u32), gui_type: Option<GuiType>
         size: SLOT_SIZE,
     });
 
-    let mut player_slot_rects = [SlotRect { x: 0.0, y: 0.0, size: SLOT_SIZE }; INVENTORY_SLOT_COUNT];
+    let mut player_slot_rects = [SlotRect {
+        x: 0.0,
+        y: 0.0,
+        size: SLOT_SIZE,
+    }; INVENTORY_SLOT_COUNT];
     for hotbar_slot in 0..HOTBAR_SLOT_COUNT {
         player_slot_rects[HOTBAR_START + hotbar_slot] = hotbar_slots[hotbar_slot];
     }
@@ -247,8 +273,10 @@ pub fn build_inventory_layout(screen_size: (u32, u32), gui_type: Option<GuiType>
         GuiType::NVCrafter => 3,
     };
     let crafting_rows = crafting_columns;
-    let crafting_grid_width = SLOT_SIZE * crafting_columns as f32 + SLOT_GAP * (crafting_columns as f32 - 1.0);
-    let crafting_grid_height = SLOT_SIZE * crafting_rows as f32 + SLOT_GAP * (crafting_rows as f32 - 1.0);
+    let crafting_grid_width =
+        SLOT_SIZE * crafting_columns as f32 + SLOT_GAP * (crafting_columns as f32 - 1.0);
+    let crafting_grid_height =
+        SLOT_SIZE * crafting_rows as f32 + SLOT_GAP * (crafting_rows as f32 - 1.0);
     let inventory_panel_height = PANEL_PADDING * 2.0
         + TITLE_HEIGHT
         + PANEL_GAP
@@ -261,7 +289,8 @@ pub fn build_inventory_layout(screen_size: (u32, u32), gui_type: Option<GuiType>
     let inventory_panel_y = (screen_h - inventory_panel_height) * 0.5;
     let inventory_grid_origin_x = inventory_panel_x + PANEL_PADDING;
     let crafting_section_width = crafting_grid_width + PANEL_GAP + SLOT_SIZE;
-    let crafting_origin_x = inventory_panel_x + (inventory_panel_width - crafting_section_width) * 0.5;
+    let crafting_origin_x =
+        inventory_panel_x + (inventory_panel_width - crafting_section_width) * 0.5;
     let crafting_origin_y = inventory_panel_y + PANEL_PADDING + TITLE_HEIGHT + PANEL_GAP;
     let output_rect = SlotRect {
         x: crafting_origin_x + crafting_grid_width + PANEL_GAP,
@@ -340,7 +369,10 @@ pub fn build_inventory_layout(screen_size: (u32, u32), gui_type: Option<GuiType>
         player_crafting_output,
         nvcrafter_slots,
         nvcrafter_output,
-        title_position: Some((inventory_panel_x + inventory_panel_width * 0.5, inventory_panel_y + PANEL_PADDING)),
+        title_position: Some((
+            inventory_panel_x + inventory_panel_width * 0.5,
+            inventory_panel_y + PANEL_PADDING,
+        )),
     }
 }
 
@@ -476,11 +508,15 @@ impl InteractionController {
             UiSlotId::PlayerCraftingOutput => self.inventory.crafting_output.clone(),
             UiSlotId::NVCrafter(index) => {
                 let position = crafter_pos?;
-                world.nvcrafter_state(position).and_then(|state| state.slot(index).clone())
+                world
+                    .nvcrafter_state(position)
+                    .and_then(|state| state.slot(index).clone())
             }
             UiSlotId::NVCrafterOutput => {
                 let position = crafter_pos?;
-                world.nvcrafter_state(position).and_then(|state| state.output.clone())
+                world
+                    .nvcrafter_state(position)
+                    .and_then(|state| state.output.clone())
             }
         }
     }
@@ -612,7 +648,12 @@ impl InteractionController {
         }
     }
 
-    pub fn update_inventory_input(&mut self, world: &mut World, input: &InputState, screen_size: (u32, u32)) {
+    pub fn update_inventory_input(
+        &mut self,
+        world: &mut World,
+        input: &InputState,
+        screen_size: (u32, u32),
+    ) {
         if self.open_gui.is_none() {
             self.hovered_slot = None;
             self.cursor_position = None;
@@ -631,7 +672,12 @@ impl InteractionController {
         self.update_inventory_drag(world, input, screen_size);
     }
 
-    fn update_inventory_drag(&mut self, world: &mut World, input: &InputState, screen_size: (u32, u32)) {
+    fn update_inventory_drag(
+        &mut self,
+        world: &mut World,
+        input: &InputState,
+        screen_size: (u32, u32),
+    ) {
         let layout = build_inventory_layout(screen_size, self.gui_type());
         self.cursor_position = input.cursor_position;
         self.hovered_slot = input
@@ -709,7 +755,9 @@ impl InteractionController {
     fn take_slot_stack(&mut self, world: &mut World, slot: UiSlotId) -> Option<ItemStack> {
         match slot {
             UiSlotId::Inventory(index) => self.inventory.take_slot(index),
-            UiSlotId::PlayerCrafting(index) => self.inventory.take_crafting_slot(index, &self.recipes),
+            UiSlotId::PlayerCrafting(index) => {
+                self.inventory.take_crafting_slot(index, &self.recipes)
+            }
             UiSlotId::PlayerCraftingOutput | UiSlotId::NVCrafterOutput => None,
             UiSlotId::NVCrafter(index) => {
                 let position = self.active_nvcrafter_position()?;
@@ -720,14 +768,20 @@ impl InteractionController {
         }
     }
 
-    fn set_slot_stack(&mut self, world: &mut World, slot: UiSlotId, stack: Option<ItemStack>) -> bool {
+    fn set_slot_stack(
+        &mut self,
+        world: &mut World,
+        slot: UiSlotId,
+        stack: Option<ItemStack>,
+    ) -> bool {
         match slot {
             UiSlotId::Inventory(index) => {
                 self.inventory.set_slot(index, stack);
                 true
             }
             UiSlotId::PlayerCrafting(index) => {
-                self.inventory.set_crafting_slot(index, stack, &self.recipes);
+                self.inventory
+                    .set_crafting_slot(index, stack, &self.recipes);
                 true
             }
             UiSlotId::PlayerCraftingOutput | UiSlotId::NVCrafterOutput => false,
@@ -806,7 +860,9 @@ impl InteractionController {
 
     fn return_or_store_stack(&mut self, world: &mut World, stack: ItemStack) {
         if let Some(origin) = self.dragged_from_slot.take() {
-            if self.slot_is_empty(world, origin) && self.set_slot_stack(world, origin, Some(stack.clone())) {
+            if self.slot_is_empty(world, origin)
+                && self.set_slot_stack(world, origin, Some(stack.clone()))
+            {
                 return;
             }
         }
@@ -859,7 +915,8 @@ impl InteractionController {
                 self.harvest_connected_tree(world, hit.block_pos);
                 true
             } else {
-                self.destroy_block_with_active_tool_gate(world, hit.block_pos).is_some()
+                self.destroy_block_with_active_tool_gate(world, hit.block_pos)
+                    .is_some()
             }
         } else if let Some(block) = self.destroy_block_with_active_tool_gate(world, hit.block_pos) {
             if mining.harvest_allowed {
@@ -891,7 +948,10 @@ impl InteractionController {
         let leaf_positions = collect_leaf_positions(world, &trunk_positions);
 
         for position in trunk_positions {
-            if self.destroy_block_with_active_tool_gate(world, position).is_none() {
+            if self
+                .destroy_block_with_active_tool_gate(world, position)
+                .is_none()
+            {
                 continue;
             }
 
@@ -899,7 +959,10 @@ impl InteractionController {
         }
 
         for position in leaf_positions {
-            if self.destroy_block_with_active_tool_gate(world, position).is_none() {
+            if self
+                .destroy_block_with_active_tool_gate(world, position)
+                .is_none()
+            {
                 continue;
             }
 
@@ -909,11 +972,11 @@ impl InteractionController {
     }
 
     fn collect_leaf_bonus_drops(&mut self, position: Vector3<i32>) {
-        if drop_roll(position, 0x9E37_79B9_7F4A_7C15) % SAPLING_DROP_ODDS == 0 {
+        if drop_roll(position, 0x9E37_79B9_7F4A_7C15).is_multiple_of(SAPLING_DROP_ODDS) {
             self.collect_item_drop(BlockType::Sapling);
         }
 
-        if drop_roll(position, 0xD1B5_4A32_D192_ED03) % STICK_DROP_ODDS == 0 {
+        if drop_roll(position, 0xD1B5_4A32_D192_ED03).is_multiple_of(STICK_DROP_ODDS) {
             self.collect_item_drop(BlockType::Stick);
         }
     }
@@ -955,12 +1018,21 @@ impl InteractionController {
     }
 
     fn place_selected_block(&mut self, world: &mut World, camera: &Camera) {
-        let Some(hit) = self.target else { return; };
-        let Some(stack) = self.inventory.active_stack() else { return; };
-        let Some(block) = stack.block_type else { return; };
+        let Some(hit) = self.target else {
+            return;
+        };
+        let Some(stack) = self.inventory.active_stack() else {
+            return;
+        };
+        let Some(block) = stack.block_type else {
+            return;
+        };
 
         let place_pos = hit.block_pos + hit.face_normal;
-        if camera.player_bounds().intersects_block(place_pos.x, place_pos.y, place_pos.z) {
+        if camera
+            .player_bounds()
+            .intersects_block(place_pos.x, place_pos.y, place_pos.z)
+        {
             return;
         }
 
@@ -1050,7 +1122,11 @@ fn collect_leaf_positions(world: &World, trunk_positions: &[Vector3<i32>]) -> Ve
 }
 
 fn offset_position(position: Vector3<i32>, offset: (i32, i32, i32)) -> Vector3<i32> {
-    Vector3::new(position.x + offset.0, position.y + offset.1, position.z + offset.2)
+    Vector3::new(
+        position.x + offset.0,
+        position.y + offset.1,
+        position.z + offset.2,
+    )
 }
 
 fn block_key(position: Vector3<i32>) -> (i32, i32, i32) {
@@ -1076,19 +1152,24 @@ fn active_tool_satisfies_break_gate(block: BlockType, active_stack: Option<&Item
     true
 }
 
-fn mining_resolution(block: BlockType, active_stack: Option<&ItemStack>) -> Option<MiningResolution> {
+fn mining_resolution(
+    block: BlockType,
+    active_stack: Option<&ItemStack>,
+) -> Option<MiningResolution> {
     let base_time = block.break_time_seconds()?;
     let tool = active_stack
         .and_then(|stack| stack.block_type)
         .and_then(|tool_block| block_tool(tool_block).map(|stats| (tool_block, stats)));
     let required_tier = block.required_tool_tier();
-    let harvest_allowed = required_tier.map_or(true, |required| {
-        tool.map_or(false, |(_, stats)| stats.tier >= required)
-    });
+    let harvest_allowed =
+        required_tier.is_none_or(|required| tool.is_some_and(|(_, stats)| stats.tier >= required));
 
     let required_time = match required_tier {
-        Some(required) if tool.map_or(false, |(_, stats)| stats.tier >= required) => {
-            base_time / tool.map(|(_, stats)| stats.speed_multiplier.max(1.0)).unwrap_or(1.0)
+        Some(required) if tool.is_some_and(|(_, stats)| stats.tier >= required) => {
+            base_time
+                / tool
+                    .map(|(_, stats)| stats.speed_multiplier.max(1.0))
+                    .unwrap_or(1.0)
         }
         Some(_) => base_time * 2.5,
         None => base_time,
@@ -1119,7 +1200,7 @@ fn destroyed_block_drop(block: BlockType, position: Vector3<i32>) -> Option<Bloc
 }
 
 fn gravel_drops_flint(position: Vector3<i32>) -> bool {
-    drop_roll(position, 0xA24B_AED4_963E_E40B) % FLINT_DROP_ODDS == 0
+    drop_roll(position, 0xA24B_AED4_963E_E40B).is_multiple_of(FLINT_DROP_ODDS)
 }
 
 fn drop_roll(position: Vector3<i32>, salt: u64) -> u64 {
@@ -1160,7 +1241,12 @@ mod tests {
         let neighbor_trunk = Vector3::new(1, 64, 0);
         let leaf = Vector3::new(0, 65, 0);
         world.set_block(root.x, root.y, root.z, BlockType::TreeTrunk);
-        world.set_block(neighbor_trunk.x, neighbor_trunk.y, neighbor_trunk.z, BlockType::TreeTrunk);
+        world.set_block(
+            neighbor_trunk.x,
+            neighbor_trunk.y,
+            neighbor_trunk.z,
+            BlockType::TreeTrunk,
+        );
         world.set_block(leaf.x, leaf.y, leaf.z, BlockType::TreeLeaves);
         (root, neighbor_trunk, leaf)
     }
@@ -1232,11 +1318,11 @@ mod tests {
     #[test]
     fn mineral_breaks_require_matching_tool_tier_for_harvests() {
         let hand = mining_resolution(BlockType::Stone, None).expect("stone should be breakable");
-        let flint_pickaxe =
-            ItemStack::from_inventory_item(BlockType::FlintPickaxe).expect("tool should be inventory item");
+        let flint_pickaxe = ItemStack::from_inventory_item(BlockType::FlintPickaxe)
+            .expect("tool should be inventory item");
 
-        let with_tool =
-            mining_resolution(BlockType::Stone, Some(&flint_pickaxe)).expect("stone should be breakable");
+        let with_tool = mining_resolution(BlockType::Stone, Some(&flint_pickaxe))
+            .expect("stone should be breakable");
 
         assert!(!hand.harvest_allowed);
         assert!(with_tool.harvest_allowed);
@@ -1245,17 +1331,21 @@ mod tests {
 
     #[test]
     fn higher_tier_ores_reject_lower_tier_tools() {
-        let stone_pickaxe =
-            ItemStack::from_inventory_item(BlockType::StonePickaxe).expect("tool should be inventory item");
-        let iron_pickaxe =
-            ItemStack::from_inventory_item(BlockType::IronPickaxe).expect("tool should be inventory item");
+        let stone_pickaxe = ItemStack::from_inventory_item(BlockType::StonePickaxe)
+            .expect("tool should be inventory item");
+        let iron_pickaxe = ItemStack::from_inventory_item(BlockType::IronPickaxe)
+            .expect("tool should be inventory item");
 
-        assert!(!mining_resolution(BlockType::DiamondOre, Some(&stone_pickaxe))
-            .expect("diamond ore should be breakable")
-            .harvest_allowed);
-        assert!(mining_resolution(BlockType::DiamondOre, Some(&iron_pickaxe))
-            .expect("diamond ore should be breakable")
-            .harvest_allowed);
+        assert!(
+            !mining_resolution(BlockType::DiamondOre, Some(&stone_pickaxe))
+                .expect("diamond ore should be breakable")
+                .harvest_allowed
+        );
+        assert!(
+            mining_resolution(BlockType::DiamondOre, Some(&iron_pickaxe))
+                .expect("diamond ore should be breakable")
+                .harvest_allowed
+        );
     }
 
     #[test]
@@ -1273,15 +1363,19 @@ mod tests {
 
     #[test]
     fn log_blocks_require_iron_or_better_power() {
-        let flint_pickaxe =
-            ItemStack::from_inventory_item(BlockType::FlintPickaxe).expect("tool should be inventory item");
-        let stone_pickaxe =
-            ItemStack::from_inventory_item(BlockType::StonePickaxe).expect("tool should be inventory item");
-        let iron_pickaxe =
-            ItemStack::from_inventory_item(BlockType::IronPickaxe).expect("tool should be inventory item");
+        let flint_pickaxe = ItemStack::from_inventory_item(BlockType::FlintPickaxe)
+            .expect("tool should be inventory item");
+        let stone_pickaxe = ItemStack::from_inventory_item(BlockType::StonePickaxe)
+            .expect("tool should be inventory item");
+        let iron_pickaxe = ItemStack::from_inventory_item(BlockType::IronPickaxe)
+            .expect("tool should be inventory item");
 
         for block in LOG_BLOCKS {
-            assert!(!active_tool_satisfies_break_gate(block, None), "hand should not break {}", block.name());
+            assert!(
+                !active_tool_satisfies_break_gate(block, None),
+                "hand should not break {}",
+                block.name()
+            );
             assert!(
                 !active_tool_satisfies_break_gate(block, Some(&flint_pickaxe)),
                 "flint should not break {}",
@@ -1302,8 +1396,8 @@ mod tests {
 
     #[test]
     fn flint_pickaxe_can_break_stone_but_not_logs_or_iron_ore() {
-        let flint_pickaxe =
-            ItemStack::from_inventory_item(BlockType::FlintPickaxe).expect("tool should be inventory item");
+        let flint_pickaxe = ItemStack::from_inventory_item(BlockType::FlintPickaxe)
+            .expect("tool should be inventory item");
 
         let power = held_tool_power(Some(&flint_pickaxe));
 
@@ -1314,8 +1408,8 @@ mod tests {
 
     #[test]
     fn stone_pickaxe_cannot_break_logs() {
-        let stone_pickaxe =
-            ItemStack::from_inventory_item(BlockType::StonePickaxe).expect("tool should be inventory item");
+        let stone_pickaxe = ItemStack::from_inventory_item(BlockType::StonePickaxe)
+            .expect("tool should be inventory item");
 
         assert!(held_tool_power(Some(&stone_pickaxe)) < block_break_hardness(BlockType::TreeTrunk));
     }
@@ -1370,12 +1464,18 @@ mod tests {
 
         controller.update_block_break(&mut world, &held_left_click(), 10.0);
 
-        assert_eq!(world.get_block(root.x, root.y, root.z), BlockType::TreeTrunk);
+        assert_eq!(
+            world.get_block(root.x, root.y, root.z),
+            BlockType::TreeTrunk
+        );
         assert_eq!(
             world.get_block(neighbor_trunk.x, neighbor_trunk.y, neighbor_trunk.z),
             BlockType::TreeTrunk
         );
-        assert_eq!(world.get_block(leaf.x, leaf.y, leaf.z), BlockType::TreeLeaves);
+        assert_eq!(
+            world.get_block(leaf.x, leaf.y, leaf.z),
+            BlockType::TreeLeaves
+        );
         assert_eq!(controller.break_state.target, None);
         assert_eq!(controller.break_state.progress, 0.0);
     }
@@ -1391,12 +1491,18 @@ mod tests {
 
         controller.update_block_break(&mut world, &held_left_click(), 10.0);
 
-        assert_eq!(world.get_block(root.x, root.y, root.z), BlockType::TreeTrunk);
+        assert_eq!(
+            world.get_block(root.x, root.y, root.z),
+            BlockType::TreeTrunk
+        );
         assert_eq!(
             world.get_block(neighbor_trunk.x, neighbor_trunk.y, neighbor_trunk.z),
             BlockType::TreeTrunk
         );
-        assert_eq!(world.get_block(leaf.x, leaf.y, leaf.z), BlockType::TreeLeaves);
+        assert_eq!(
+            world.get_block(leaf.x, leaf.y, leaf.z),
+            BlockType::TreeLeaves
+        );
     }
 
     #[test]
@@ -1410,12 +1516,18 @@ mod tests {
 
         controller.update_block_break(&mut world, &held_left_click(), 10.0);
 
-        assert_eq!(world.get_block(root.x, root.y, root.z), BlockType::TreeTrunk);
+        assert_eq!(
+            world.get_block(root.x, root.y, root.z),
+            BlockType::TreeTrunk
+        );
         assert_eq!(
             world.get_block(neighbor_trunk.x, neighbor_trunk.y, neighbor_trunk.z),
             BlockType::TreeTrunk
         );
-        assert_eq!(world.get_block(leaf.x, leaf.y, leaf.z), BlockType::TreeLeaves);
+        assert_eq!(
+            world.get_block(leaf.x, leaf.y, leaf.z),
+            BlockType::TreeLeaves
+        );
     }
 
     #[test]
@@ -1457,7 +1569,10 @@ mod tests {
         controller.update_block_break(&mut world, &held_left_click(), 10.0);
 
         assert_eq!(world.get_block(root.x, root.y, root.z), BlockType::Air);
-        assert_eq!(world.get_block(neighbor_trunk.x, neighbor_trunk.y, neighbor_trunk.z), BlockType::Air);
+        assert_eq!(
+            world.get_block(neighbor_trunk.x, neighbor_trunk.y, neighbor_trunk.z),
+            BlockType::Air
+        );
         assert_eq!(world.get_block(leaf.x, leaf.y, leaf.z), BlockType::Air);
     }
 
@@ -1488,7 +1603,8 @@ mod tests {
         let mut controller = InteractionController::default();
 
         for index in 0..INVENTORY_SLOT_COUNT {
-            let mut stack = ItemStack::from_inventory_item(BlockType::Dirt).expect("dirt should exist");
+            let mut stack =
+                ItemStack::from_inventory_item(BlockType::Dirt).expect("dirt should exist");
             stack.count = stack.max_stack;
             controller.inventory.set_slot(index, Some(stack));
         }
@@ -1500,18 +1616,30 @@ mod tests {
         );
 
         assert_eq!(
-            controller.inventory.crafting_output.as_ref().and_then(|stack| stack.block_type),
+            controller
+                .inventory
+                .crafting_output
+                .as_ref()
+                .and_then(|stack| stack.block_type),
             Some(BlockType::Planks)
         );
 
         controller.handle_output_click(&mut world, UiSlotId::PlayerCraftingOutput);
 
         assert_eq!(
-            controller.inventory.crafting_output.as_ref().and_then(|stack| stack.block_type),
+            controller
+                .inventory
+                .crafting_output
+                .as_ref()
+                .and_then(|stack| stack.block_type),
             Some(BlockType::Planks)
         );
         assert_eq!(
-            controller.inventory.crafting_slot(0).as_ref().and_then(|stack| stack.block_type),
+            controller
+                .inventory
+                .crafting_slot(0)
+                .as_ref()
+                .and_then(|stack| stack.block_type),
             Some(BlockType::TreeTrunk)
         );
         assert!(!inventory_contains(&controller, BlockType::Planks));
@@ -1546,7 +1674,9 @@ mod tests {
         for slot in recipe_slots {
             crafter.set_slot(
                 slot,
-                Some(ItemStack::from_inventory_item(BlockType::Planks).expect("planks should exist")),
+                Some(
+                    ItemStack::from_inventory_item(BlockType::Planks).expect("planks should exist"),
+                ),
                 &controller.recipes,
             );
         }
@@ -1567,7 +1697,9 @@ mod tests {
         controller.handle_output_click(&mut world, UiSlotId::NVCrafterOutput);
 
         assert!(inventory_contains(&controller, BlockType::NVCrafter));
-        let state = world.nvcrafter_state(position).expect("crafter state should persist");
+        let state = world
+            .nvcrafter_state(position)
+            .expect("crafter state should persist");
         assert!(state.output.is_none());
         assert!((0..state.grid.active_len()).all(|index| state.slot(index).is_none()));
     }

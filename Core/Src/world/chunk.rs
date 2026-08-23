@@ -1,9 +1,9 @@
-use super::block::BlockType;
 use super::biomes::BiomeGenerator;
+use super::block::BlockType;
 use super::worldgen::WorldBlockWrite;
 
 pub const CHUNK_W: usize = 16;
-pub const CHUNK_H: usize = 512;  // Zwiększone z 256 na 512 - podwojona wysokość
+pub const CHUNK_H: usize = 512; // Zwiększone z 256 na 512 - podwojona wysokość
 pub const CHUNK_D: usize = 16;
 
 pub struct GeneratedChunk {
@@ -101,7 +101,11 @@ impl Chunk {
     pub fn from_flat(bytes: &[u8]) -> Self {
         let expected_cells = CHUNK_W * CHUNK_H * CHUNK_D;
         let expected_len = expected_cells * 2;
-        assert_eq!(bytes.len(), expected_len, "chunk flat data has wrong length (expected blocks + water_meta)");
+        assert_eq!(
+            bytes.len(),
+            expected_len,
+            "chunk flat data has wrong length (expected blocks + water_meta)"
+        );
 
         let mut blocks = Box::new([[[BlockType::Air; CHUNK_D]; CHUNK_H]; CHUNK_W]);
         let mut water_meta = Box::new([[[0u8; CHUNK_D]; CHUNK_H]; CHUNK_W]);

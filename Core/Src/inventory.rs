@@ -153,7 +153,9 @@ impl Inventory {
 
     pub fn active_stack_mut(&mut self) -> Option<&mut ItemStack> {
         let active_index = self.active_slot_index();
-        self.slots.get_mut(active_index).and_then(|slot| slot.as_mut())
+        self.slots
+            .get_mut(active_index)
+            .and_then(|slot| slot.as_mut())
     }
 
     pub fn active_tool_power(&self) -> u8 {
@@ -172,7 +174,8 @@ impl Inventory {
         stack: Option<ItemStack>,
         recipes: &RecipeRegistry,
     ) {
-        self.crafting_grid.set_slot(index, stack.map(ItemStack::normalized));
+        self.crafting_grid
+            .set_slot(index, stack.map(ItemStack::normalized));
         self.update_crafting_output(recipes);
     }
 
@@ -241,13 +244,18 @@ impl Inventory {
         }
 
         for slot in &mut self.slots {
-            let Some(existing) = slot.as_mut() else { continue; };
+            let Some(existing) = slot.as_mut() else {
+                continue;
+            };
             existing.normalize_in_place();
             if !existing.can_stack_with(&stack) || existing.count >= existing.max_stack {
                 continue;
             }
 
-            let transfer = existing.max_stack.saturating_sub(existing.count).min(stack.count);
+            let transfer = existing
+                .max_stack
+                .saturating_sub(existing.count)
+                .min(stack.count);
             if transfer == 0 {
                 continue;
             }
@@ -463,7 +471,8 @@ mod tests {
 
     #[test]
     fn tool_items_normalize_to_single_stack_with_durability() {
-        let tool = ItemStack::from_inventory_item(BlockType::StonePickaxe).expect("tool should be inventory item");
+        let tool = ItemStack::from_inventory_item(BlockType::StonePickaxe)
+            .expect("tool should be inventory item");
 
         assert_eq!(tool.count, 1);
         assert_eq!(tool.max_stack, 1);
@@ -524,8 +533,8 @@ mod tests {
             .expect("tool should be inventory item");
         let netherite_pickaxe = ItemStack::from_inventory_item(BlockType::NetheritePickaxe)
             .expect("tool should be inventory item");
-        let dirt = ItemStack::from_inventory_item(BlockType::Dirt)
-            .expect("dirt should be inventory item");
+        let dirt =
+            ItemStack::from_inventory_item(BlockType::Dirt).expect("dirt should be inventory item");
 
         assert_eq!(ToolTier::Hand.power(), 1);
         assert_eq!(flint_pickaxe.tool_power(), ToolTier::Flint.power());
@@ -548,10 +557,16 @@ mod tests {
         );
 
         assert_eq!(
-            inventory.crafting_output.as_ref().and_then(|stack| stack.block_type),
+            inventory
+                .crafting_output
+                .as_ref()
+                .and_then(|stack| stack.block_type),
             Some(BlockType::Planks)
         );
-        assert_eq!(inventory.crafting_output.as_ref().map(|stack| stack.count), Some(4));
+        assert_eq!(
+            inventory.crafting_output.as_ref().map(|stack| stack.count),
+            Some(4)
+        );
     }
 
     #[test]
@@ -571,10 +586,16 @@ mod tests {
         );
 
         assert_eq!(
-            inventory.crafting_output.as_ref().and_then(|stack| stack.block_type),
+            inventory
+                .crafting_output
+                .as_ref()
+                .and_then(|stack| stack.block_type),
             Some(BlockType::Stick)
         );
-        assert_eq!(inventory.crafting_output.as_ref().map(|stack| stack.count), Some(4));
+        assert_eq!(
+            inventory.crafting_output.as_ref().map(|stack| stack.count),
+            Some(4)
+        );
     }
 
     #[test]

@@ -2,7 +2,9 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use fontdue::{
-    layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle as LayoutTextStyle},
+    layout::{
+        CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle as LayoutTextStyle,
+    },
     Font, FontSettings,
 };
 use wgpu::util::DeviceExt;
@@ -228,7 +230,9 @@ impl TextRenderer {
         text: &str,
         alignment: TextAlignment,
     ) -> Result<()> {
-        self.draw_text_tinted(device, queue, screen_x, screen_y, scale, text, alignment, WHITE)
+        self.draw_text_tinted(
+            device, queue, screen_x, screen_y, scale, text, alignment, WHITE,
+        )
     }
 
     pub(crate) fn draw_text_tinted(
@@ -312,7 +316,15 @@ impl TextRenderer {
 
         let screen_x = self.screen_size.0 as f32 * 0.5;
         let screen_y = self.screen_size.1 as f32 - SUBTITLE_BOTTOM_MARGIN_PX - bounds.height;
-        self.draw_text(device, queue, screen_x, screen_y, 1.0, text, TextAlignment::Center)
+        self.draw_text(
+            device,
+            queue,
+            screen_x,
+            screen_y,
+            1.0,
+            text,
+            TextAlignment::Center,
+        )
     }
 
     pub fn render_command_prompt(
@@ -327,7 +339,15 @@ impl TextRenderer {
 
         let screen_x = self.screen_size.0 as f32 * 0.5;
         let screen_y = self.screen_size.1 as f32 - COMMAND_PROMPT_BOTTOM_MARGIN_PX - bounds.height;
-        self.draw_text(device, queue, screen_x, screen_y, 1.2, text, TextAlignment::Center)
+        self.draw_text(
+            device,
+            queue,
+            screen_x,
+            screen_y,
+            1.2,
+            text,
+            TextAlignment::Center,
+        )
     }
 
     pub fn draw<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>) {
@@ -362,7 +382,10 @@ impl TextRenderer {
             y: 0.0,
             ..Default::default()
         });
-        layout.append(&[font], &LayoutTextStyle::new(text, self.pixel_height(scale), 0));
+        layout.append(
+            &[font],
+            &LayoutTextStyle::new(text, self.pixel_height(scale), 0),
+        );
 
         let glyphs = layout.glyphs().to_vec();
         let mut min_x = f32::MAX;
@@ -407,7 +430,8 @@ impl TextRenderer {
             .font
             .as_ref()
             .context("text renderer font has not been loaded")?;
-        let mut pixels = vec![0u8; layout.texture_width as usize * layout.texture_height as usize * 4];
+        let mut pixels =
+            vec![0u8; layout.texture_width as usize * layout.texture_height as usize * 4];
 
         for glyph in &layout.glyphs {
             if glyph.width == 0 || glyph.height == 0 {
@@ -555,11 +579,19 @@ impl TextRenderer {
 
     fn pixel_height(&self, scale: f32) -> f32 {
         let screen_factor = (self.screen_size.1 as f32 / 720.0).max(1.0);
-        (BASE_TEXT_PX * scale * screen_factor).round().max(MIN_TEXT_PX)
+        (BASE_TEXT_PX * scale * screen_factor)
+            .round()
+            .max(MIN_TEXT_PX)
     }
 }
 
-fn quad_vertices(screen_size: (u32, u32), screen_x: f32, screen_y: f32, width: f32, height: f32) -> [TextVertex; 4] {
+fn quad_vertices(
+    screen_size: (u32, u32),
+    screen_x: f32,
+    screen_y: f32,
+    width: f32,
+    height: f32,
+) -> [TextVertex; 4] {
     let screen_w = screen_size.0.max(1) as f32;
     let screen_h = screen_size.1.max(1) as f32;
 
@@ -619,8 +651,8 @@ fn blit_glyph(
 
             let pixel_index = (y as usize * dest_width as usize + x as usize) * 4;
             let src_alpha = alpha.saturating_mul(color[3]) / 255;
-            let src_alpha = (((src_alpha as f32 / 255.0).powf(0.82) * 255.0).round() as u8)
-                .max(src_alpha);
+            let src_alpha =
+                (((src_alpha as f32 / 255.0).powf(0.82) * 255.0).round() as u8).max(src_alpha);
             if src_alpha > pixels[pixel_index + 3] {
                 pixels[pixel_index] = color[0];
                 pixels[pixel_index + 1] = color[1];
