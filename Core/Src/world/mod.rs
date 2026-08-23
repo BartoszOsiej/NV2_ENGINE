@@ -1,20 +1,22 @@
+pub mod ai_feedback;
+pub mod ai_generator;
+pub mod biomes;
 pub mod block;
 pub mod chunk;
-pub mod biomes;
 pub mod generator;
-pub mod raycast;
-pub mod palette;
 pub mod liquid;
+pub mod memplp;
+pub mod palette;
+pub mod raycast;
 pub mod vegetation;
 pub mod worldgen;
-pub mod ai_generator;
-pub mod ai_feedback;
-pub mod memplp;
 
 /// Which passive animal lives in a biome (None in deserts/tundra/ocean).
 fn animal_kind_for_biome(biome: biomes::BiomeId) -> Option<crate::gameplay::AnimalKind> {
     match biome {
-        biomes::BiomeId::Plains | biomes::BiomeId::Coast => Some(crate::gameplay::AnimalKind::Rabbit),
+        biomes::BiomeId::Plains | biomes::BiomeId::Coast => {
+            Some(crate::gameplay::AnimalKind::Rabbit)
+        }
         biomes::BiomeId::Forest
         | biomes::BiomeId::DarkForest
         | biomes::BiomeId::Taiga
@@ -23,29 +25,30 @@ fn animal_kind_for_biome(biome: biomes::BiomeId) -> Option<crate::gameplay::Anim
         _ => None,
     }
 }
-pub mod decorations;pub mod decoration_ai;
-pub mod online_trainer;
+pub mod decoration_ai;
+pub mod decorations;
 pub mod meteo;
+pub mod online_trainer;
 
+use crate::{crafting::NVCrafterState, inventory::ItemStack, settings::SharedSettings};
+use ai_generator::AISystem;
+use anyhow::{Context, Result};
+use biomes::SEA_LEVEL;
+use biomes::{Biome, BiomeGenerator};
+pub use block::BlockType;
+use cgmath::Vector3;
+use chunk::{Chunk, GeneratedChunk, CHUNK_D, CHUNK_W};
+use decorations::DecorationManager;
+use generator::{ChunkGenerator, GeneratorMessage};
+pub use raycast::RaycastHit;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc;
-use anyhow::{Context, Result};
-use cgmath::Vector3;
-use serde::{Deserialize, Serialize};
-use chunk::{Chunk, GeneratedChunk, CHUNK_W, CHUNK_D};
-use biomes::{Biome, BiomeGenerator};
-use biomes::SEA_LEVEL;
-use generator::{ChunkGenerator, GeneratorMessage};
+use std::sync::Arc;
 use worldgen::WorldBlockWrite;
-use ai_generator::AISystem;
-use decorations::DecorationManager;
-use crate::{crafting::NVCrafterState, inventory::ItemStack, settings::SharedSettings};
-pub use block::BlockType;
-pub use raycast::RaycastHit;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorldItemDrop {
@@ -105,10 +108,8 @@ impl World {
     /// any `checkpoints/ai_model.json` left behind by a previous run.
     #[cfg(test)]
     pub fn new_for_tests(seed: u32) -> Self {
-        let (chunk_gen, gen_receiver) = ChunkGenerator::new_with_seed_and_settings(
-            seed,
-            SharedSettings::default(),
-        );
+        let (chunk_gen, gen_receiver) =
+            ChunkGenerator::new_with_seed_and_settings(seed, SharedSettings::default());
         let generator = Arc::clone(chunk_gen.generator());
         let (ai_system, ai_receiver) = ai_generator::AISystem::new_clean();
         Self {
@@ -129,7 +130,8 @@ impl World {
     }
 
     pub fn new_with_settings(seed: u32, settings: SharedSettings) -> Self {
-        let (chunk_gen, gen_receiver) = ChunkGenerator::new_with_seed_and_settings(seed, settings.clone());
+        let (chunk_gen, gen_receiver) =
+            ChunkGenerator::new_with_seed_and_settings(seed, settings.clone());
         let generator = Arc::clone(chunk_gen.generator());
         let (ai_system, ai_receiver) = AISystem::new();
         Self {
@@ -239,7 +241,10 @@ impl World {
             return;
         }
 
-        self.pending_world_writes.entry((cx, cz)).or_default().push(write);
+        self.pending_world_writes
+            .entry((cx, cz))
+            .or_default()
+            .push(write);
     }
 
     /// Process any completed chunks from background generation.
@@ -251,7 +256,8 @@ impl World {
         self.chunk_gen.flush();
         // Drain any completed chunks.
         let mut inserted = Vec::new();
-        while let Ok(GeneratorMessage::ChunkReady(cx, cz, generated)) = self.gen_receiver.try_recv() {
+        while let Ok(GeneratorMessage::ChunkReady(cx, cz, generated)) = self.gen_receiver.try_recv()
+        {
             if self.insert_generated_chunk(cx, cz, generated) {
                 inserted.push((cx, cz));
             }
@@ -280,7 +286,7 @@ impl World {
         }
 
         let mut to_generate = Vec::new();
-        
+
         for dz in -radius..=radius {
             for dx in -radius..=radius {
                 let key = (cx + dx, cz + dz);
@@ -298,7 +304,7 @@ impl World {
                 }
             }
         }
-        
+
         // Queue all distant chunks for background generation
         if !to_generate.is_empty() {
             self.chunk_gen.queue_chunks(&to_generate);
@@ -384,22 +390,30 @@ impl World {
         }
 
         if previous != BlockType::NVCrafter && next == BlockType::NVCrafter {
-            self.nvcrafter_states.entry(key).or_insert_with(NVCrafterState::new);
+            self.nvcrafter_states
+                .entry(key)
+                .or_insert_with(NVCrafterState::new);
         }
     }
 
-    pub fn ensure_nvcrafter_state(&mut self, position: Vector3<i32>) -> Option<&mut NVCrafterState> {
+    pub fn ensure_nvcrafter_state(
+        &mut self,
+        position: Vector3<i32>,
+    ) -> Option<&mut NVCrafterState> {
         if self.get_block(position.x, position.y, position.z) != BlockType::NVCrafter {
             return None;
         }
 
         let key = (position.x, position.y, position.z);
-        self.nvcrafter_states.entry(key).or_insert_with(NVCrafterState::new);
+        self.nvcrafter_states
+            .entry(key)
+            .or_insert_with(NVCrafterState::new);
         self.nvcrafter_states.get_mut(&key)
     }
 
     pub fn nvcrafter_state(&self, position: Vector3<i32>) -> Option<&NVCrafterState> {
-        self.nvcrafter_states.get(&(position.x, position.y, position.z))
+        self.nvcrafter_states
+            .get(&(position.x, position.y, position.z))
     }
 
     pub fn nvcrafter_state_mut(&mut self, position: Vector3<i32>) -> Option<&mut NVCrafterState> {
@@ -407,7 +421,8 @@ impl World {
     }
 
     fn take_nvcrafter_state(&mut self, position: Vector3<i32>) -> Option<NVCrafterState> {
-        self.nvcrafter_states.remove(&(position.x, position.y, position.z))
+        self.nvcrafter_states
+            .remove(&(position.x, position.y, position.z))
     }
 
     fn push_item_drop(&mut self, position: Vector3<i32>, stack: ItemStack) {
@@ -438,13 +453,20 @@ impl World {
         drained
     }
 
-    pub fn raycast_block(&self, origin: Vector3<f32>, direction: Vector3<f32>) -> Option<RaycastHit> {
+    pub fn raycast_block(
+        &self,
+        origin: Vector3<f32>,
+        direction: Vector3<f32>,
+    ) -> Option<RaycastHit> {
         raycast::raycast_solid_block(origin, direction, 5.0, self)
     }
 
     pub fn destroy_block(&mut self, pos: Vector3<i32>) -> Option<BlockType> {
         let block = self.get_block(pos.x, pos.y, pos.z);
-        if matches!(block, BlockType::Air | BlockType::Water | BlockType::Bedrock) {
+        if matches!(
+            block,
+            BlockType::Air | BlockType::Water | BlockType::Bedrock
+        ) {
             return None;
         }
         if !block.is_solid() && block.movement_medium().is_none() {
@@ -565,8 +587,7 @@ impl World {
             for i in start..end {
                 let h = (seed as u64)
                     .wrapping_mul(0x9E37_79B1)
-                    .wrapping_add(i as u64 * 0x9E37_79B1)
-                    as f32;
+                    .wrapping_add(i as u64 * 0x9E37_79B1) as f32;
                 // Bias towards the camera's facing direction, spread across
                 // a cone so several animals can stand in view at once.
                 let ang = yaw + (h.fract() * 2.0 - 1.0) * cone;
@@ -636,7 +657,12 @@ impl World {
             }
         }
 
-        anyhow::bail!("No safe teleport space found near ({}, {}, {}).", wx, wy, wz)
+        anyhow::bail!(
+            "No safe teleport space found near ({}, {}, {}).",
+            wx,
+            wy,
+            wz
+        )
     }
 
     fn player_column_is_clear(&self, wx: i32, wy: i32, wz: i32) -> bool {
@@ -687,7 +713,12 @@ impl World {
         pts
     }
 
-    fn find_spawn_position_near(&mut self, center_x: i32, center_z: i32, search_radius: i32) -> Option<(f32, f32, f32)> {
+    fn find_spawn_position_near(
+        &mut self,
+        center_x: i32,
+        center_z: i32,
+        search_radius: i32,
+    ) -> Option<(f32, f32, f32)> {
         let chunk_radius_x = (search_radius + CHUNK_W as i32 - 1) / CHUNK_W as i32;
         let chunk_radius_z = (search_radius + CHUNK_D as i32 - 1) / CHUNK_D as i32;
         let chunk_radius = chunk_radius_x.max(chunk_radius_z).max(1);
@@ -723,11 +754,17 @@ impl World {
                 let oz = (((h >> 8) & 0x7f) as i32 - 64) * 8;
                 (ox, oz)
             };
-            [to_offset(h0), to_offset(h1), to_offset(h2), to_offset(h3), to_offset(h4)]
+            [
+                to_offset(h0),
+                to_offset(h1),
+                to_offset(h2),
+                to_offset(h3),
+                to_offset(h4),
+            ]
         };
 
-        let step        = 4i32;
-        let max_ring    = 128i32;   // ±512 blocks per offset
+        let step = 4i32;
+        let max_ring = 128i32; // ±512 blocks per offset
         let local_radius = 8i32;
 
         // Helper: spiral-ring iterator for a given centre.
@@ -779,11 +816,11 @@ impl World {
                 let mut v = Vec::new();
                 for i in -ring..=ring {
                     v.push((i * 8, -d));
-                    v.push((i * 8,  d));
+                    v.push((i * 8, d));
                 }
                 for i in (-ring + 1)..ring {
                     v.push((-d, i * 8));
-                    v.push(( d, i * 8));
+                    v.push((d, i * 8));
                 }
                 v
             };
@@ -803,7 +840,10 @@ impl World {
 
         for search_radius in [160, 256, 384] {
             if let Some(spawn) = self.find_spawn_position_near(0, 0, search_radius) {
-                eprintln!("⚠ spawn: using extended origin fallback with radius {}", search_radius);
+                eprintln!(
+                    "⚠ spawn: using extended origin fallback with radius {}",
+                    search_radius
+                );
                 return spawn;
             }
         }
@@ -819,7 +859,9 @@ impl World {
 
     /// Get per-voxel water metadata (0 if none)
     pub fn get_water_meta(&self, wx: i32, wy: i32, wz: i32) -> u8 {
-        if wy < 0 || wy >= chunk::CHUNK_H as i32 { return 0; }
+        if wy < 0 || wy >= chunk::CHUNK_H as i32 {
+            return 0;
+        }
         let cx = wx.div_euclid(CHUNK_W as i32);
         let cz = wz.div_euclid(CHUNK_D as i32);
         let lx = wx.rem_euclid(CHUNK_W as i32) as usize;
@@ -832,7 +874,9 @@ impl World {
 
     /// Set per-voxel water metadata (no-op if chunk missing)
     pub fn set_water_meta(&mut self, wx: i32, wy: i32, wz: i32, meta: u8) {
-        if wy < 0 || wy >= chunk::CHUNK_H as i32 { return; }
+        if wy < 0 || wy >= chunk::CHUNK_H as i32 {
+            return;
+        }
         let cx = wx.div_euclid(CHUNK_W as i32);
         let cz = wz.div_euclid(CHUNK_D as i32);
         let lx = wx.rem_euclid(CHUNK_W as i32) as usize;
@@ -848,11 +892,15 @@ impl World {
             std::fs::create_dir_all(parent).context("create save directory")?;
         }
 
-        let chunks = self.chunks.iter().map(|(&(cx, cz), chunk)| ChunkSave {
-            cx,
-            cz,
-            blocks: chunk.flatten(),
-        }).collect();
+        let chunks = self
+            .chunks
+            .iter()
+            .map(|(&(cx, cz), chunk)| ChunkSave {
+                cx,
+                cz,
+                blocks: chunk.flatten(),
+            })
+            .collect();
 
         let save = WorldSave {
             seed: self.generator.seed(),
@@ -879,7 +927,10 @@ impl World {
         Self::load_from_file_with_settings(path, SharedSettings::default())
     }
 
-    pub fn load_from_file_with_settings<P: AsRef<Path>>(path: P, settings: SharedSettings) -> Result<Self> {
+    pub fn load_from_file_with_settings<P: AsRef<Path>>(
+        path: P,
+        settings: SharedSettings,
+    ) -> Result<Self> {
         let file = File::open(path.as_ref()).context("open save file")?;
         let save: WorldSave = serde_json::from_reader(file).context("deserialize world save")?;
 
@@ -920,9 +971,19 @@ mod tests {
         let wy = spawn.1 as i32;
         let wz = spawn.2.floor() as i32;
 
-        assert_ne!((wx, wz), (0, 0), "spawn should move off medium-only columns");
-        assert!(world.get_block(wx, wy - 1, wz).is_solid(), "spawn must sit above a solid block");
-        assert!(world.spawn_volume_is_clear(wx, wy, wz), "spawn volume must avoid solids, water, and foliage mediums");
+        assert_ne!(
+            (wx, wz),
+            (0, 0),
+            "spawn should move off medium-only columns"
+        );
+        assert!(
+            world.get_block(wx, wy - 1, wz).is_solid(),
+            "spawn must sit above a solid block"
+        );
+        assert!(
+            world.spawn_volume_is_clear(wx, wy, wz),
+            "spawn volume must avoid solids, water, and foliage mediums"
+        );
     }
 
     #[test]
@@ -935,8 +996,14 @@ mod tests {
             let wy = spawn.1 as i32;
             let wz = spawn.2.floor() as i32;
 
-            assert!(world.get_block(wx, wy - 1, wz).is_solid(), "spawn must resolve to a solid support block for seed {seed}");
-            assert!(world.spawn_volume_is_clear(wx, wy, wz), "spawn must resolve to clear runtime space for seed {seed}");
+            assert!(
+                world.get_block(wx, wy - 1, wz).is_solid(),
+                "spawn must resolve to a solid support block for seed {seed}"
+            );
+            assert!(
+                world.spawn_volume_is_clear(wx, wy, wz),
+                "spawn must resolve to clear runtime space for seed {seed}"
+            );
         }
     }
 
@@ -989,7 +1056,10 @@ mod tests {
 
                     if canopy_found {
                         assert_ne!((source_cx, source_cz), (dest_cx, dest_cz));
-                        assert!(chunk.is_dirty, "neighbor chunk should be dirtied by world.set_block canopy writes");
+                        assert!(
+                            chunk.is_dirty,
+                            "neighbor chunk should be dirtied by world.set_block canopy writes"
+                        );
                         assert!(
                             !world.tree_populated_chunks.contains(&(dest_cx, dest_cz)),
                             "cross-chunk canopy destination should stay terrain-only until explicitly loaded"
@@ -1001,7 +1071,10 @@ mod tests {
             }
         }
 
-        assert!(found, "expected to find at least one canopy spanning into a neighboring chunk");
+        assert!(
+            found,
+            "expected to find at least one canopy spanning into a neighboring chunk"
+        );
     }
 
     #[test]
@@ -1013,7 +1086,10 @@ mod tests {
         world.set_block(0, y, 2, BlockType::Stone);
 
         let hit = world
-            .raycast_block(Vector3::new(0.5, y as f32 + 0.5, 0.5), Vector3::new(0.0, 0.0, 1.0))
+            .raycast_block(
+                Vector3::new(0.5, y as f32 + 0.5, 0.5),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
             .expect("expected raycast to hit the first solid block");
 
         assert_eq!(hit.block_pos, Vector3::new(0, y, 2));

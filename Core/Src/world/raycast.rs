@@ -29,9 +29,21 @@ pub(crate) fn raycast_solid_block(
     let step_y = dir.y.signum() as i32;
     let step_z = dir.z.signum() as i32;
 
-    let inv_x = if dir.x.abs() > f32::EPSILON { 1.0 / dir.x.abs() } else { f32::INFINITY };
-    let inv_y = if dir.y.abs() > f32::EPSILON { 1.0 / dir.y.abs() } else { f32::INFINITY };
-    let inv_z = if dir.z.abs() > f32::EPSILON { 1.0 / dir.z.abs() } else { f32::INFINITY };
+    let inv_x = if dir.x.abs() > f32::EPSILON {
+        1.0 / dir.x.abs()
+    } else {
+        f32::INFINITY
+    };
+    let inv_y = if dir.y.abs() > f32::EPSILON {
+        1.0 / dir.y.abs()
+    } else {
+        f32::INFINITY
+    };
+    let inv_z = if dir.z.abs() > f32::EPSILON {
+        1.0 / dir.z.abs()
+    } else {
+        f32::INFINITY
+    };
 
     let mut side_x = initial_side_distance(origin.x, bx, dir.x, inv_x);
     let mut side_y = initial_side_distance(origin.y, by, dir.y, inv_y);

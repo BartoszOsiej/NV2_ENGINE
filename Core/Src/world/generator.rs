@@ -1,9 +1,9 @@
-use super::chunk::{Chunk, GeneratedChunk};
 use super::biomes::BiomeGenerator;
+use super::chunk::{Chunk, GeneratedChunk};
 use crate::settings::SharedSettings;
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Receiver};
 use rayon::prelude::*;
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 
 /// Message sent from generator threads to the main thread.
 pub enum GeneratorMessage {
@@ -17,11 +17,11 @@ pub enum GeneratorMessage {
 /// each frame.  The work-queue is bounded to prevent memory growth during
 /// fast camera movement.
 pub struct ChunkGenerator {
-    tx:             mpsc::Sender<GeneratorMessage>,
-    work_queue:     Arc<Mutex<Vec<(i32, i32)>>>,
-    in_flight:      Arc<Mutex<std::collections::HashSet<(i32, i32)>>>,
+    tx: mpsc::Sender<GeneratorMessage>,
+    work_queue: Arc<Mutex<Vec<(i32, i32)>>>,
+    in_flight: Arc<Mutex<std::collections::HashSet<(i32, i32)>>>,
     max_queue_size: usize,
-    gen:            Arc<BiomeGenerator>,
+    gen: Arc<BiomeGenerator>,
 }
 
 impl ChunkGenerator {
@@ -34,14 +34,17 @@ impl ChunkGenerator {
         Self::new_with_seed_and_settings(seed, SharedSettings::default())
     }
 
-    pub fn new_with_seed_and_settings(seed: u32, settings: SharedSettings) -> (Self, Receiver<GeneratorMessage>) {
+    pub fn new_with_seed_and_settings(
+        seed: u32,
+        settings: SharedSettings,
+    ) -> (Self, Receiver<GeneratorMessage>) {
         let (tx, rx) = mpsc::channel();
-        let gen      = Arc::new(BiomeGenerator::new_with_settings(seed, settings));
+        let gen = Arc::new(BiomeGenerator::new_with_settings(seed, settings));
         (
             Self {
                 tx,
-                work_queue:     Arc::new(Mutex::new(Vec::with_capacity(Self::MAX_QUEUE_SIZE))),
-                in_flight:      Arc::new(Mutex::new(std::collections::HashSet::new())),
+                work_queue: Arc::new(Mutex::new(Vec::with_capacity(Self::MAX_QUEUE_SIZE))),
+                in_flight: Arc::new(Mutex::new(std::collections::HashSet::new())),
                 max_queue_size: Self::MAX_QUEUE_SIZE,
                 gen,
             },
@@ -59,7 +62,9 @@ impl ChunkGenerator {
             Ok(q) => q,
             Err(_) => return,
         };
-        if queue.len() >= self.max_queue_size { return; }
+        if queue.len() >= self.max_queue_size {
+            return;
+        }
         let in_flight = self.in_flight.try_lock();
         let already_flying = in_flight.map(|s| s.contains(&(cx, cz))).unwrap_or(false);
         if !already_flying && !queue.iter().any(|&(x, z)| x == cx && z == cz) {
@@ -75,8 +80,13 @@ impl ChunkGenerator {
         };
         let in_flight = self.in_flight.try_lock();
         for &(cx, cz) in coords {
-            if queue.len() >= self.max_queue_size { break; }
-            let flying = in_flight.as_ref().map(|s| s.contains(&(cx, cz))).unwrap_or(false);
+            if queue.len() >= self.max_queue_size {
+                break;
+            }
+            let flying = in_flight
+                .as_ref()
+                .map(|s| s.contains(&(cx, cz)))
+                .unwrap_or(false);
             if !flying && !queue.iter().any(|&(x, z)| x == cx && z == cz) {
                 queue.push((cx, cz));
             }
@@ -93,26 +103,32 @@ impl ChunkGenerator {
                 Err(_) => return,
             };
             let n = queue.len().min(Self::BATCH_SIZE);
-            if n == 0 { return; }
+            if n == 0 {
+                return;
+            }
             // Take from the front (closest-first ordering maintained by caller)
             queue.drain(..n).collect()
         };
 
         // Mark batch as in-flight
         if let Ok(mut s) = self.in_flight.try_lock() {
-            for &coord in &batch { s.insert(coord); }
+            for &coord in &batch {
+                s.insert(coord);
+            }
         }
 
-        let tx      = self.tx.clone();
-        let gen     = self.gen.clone();
-        let in_fl   = self.in_flight.clone();
+        let tx = self.tx.clone();
+        let gen = self.gen.clone();
+        let in_fl = self.in_flight.clone();
 
         // Spawn onto rayon — each item gets its own parallel job
         rayon::spawn(move || {
             batch.into_par_iter().for_each(|(cx, cz)| {
                 let chunk = Chunk::generate(cx, cz, &gen);
                 let _ = tx.send(GeneratorMessage::ChunkReady(cx, cz, chunk));
-                if let Ok(mut s) = in_fl.try_lock() { s.remove(&(cx, cz)); }
+                if let Ok(mut s) = in_fl.try_lock() {
+                    s.remove(&(cx, cz));
+                }
             });
         });
     }
@@ -128,7 +144,9 @@ impl ChunkGenerator {
         self.queue_depth() > self.max_queue_size / 2
     }
 
-    pub fn generator(&self) -> &Arc<BiomeGenerator> { &self.gen }
+    pub fn generator(&self) -> &Arc<BiomeGenerator> {
+        &self.gen
+    }
 }
 
 impl Default for ChunkGenerator {

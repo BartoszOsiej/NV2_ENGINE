@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use wgpu::util::DeviceExt;
-use winit::{dpi::PhysicalSize, window::{CursorGrabMode, Window}};
+use winit::{
+    dpi::PhysicalSize,
+    window::{CursorGrabMode, Window},
+};
 
 /// Maximum number of live weather particles (rain streaks / snow flakes).
 const MAX_WEATHER_PARTICLES: usize = 2048;
@@ -33,7 +36,16 @@ fn build_unit_cube() -> Vec<[f32; 8]> {
             // uv across the face: (dot(c, u) + 1) / 2, (dot(c, v) + 1) / 2
             let uv0 = (c[0] * u[0] + c[1] * u[1] + c[2] * u[2] + 1.0) * 0.5;
             let uv1 = (c[0] * v[0] + c[1] * v[1] + c[2] * v[2] + 1.0) * 0.5;
-            out.push([c[0] * 0.5, c[1] * 0.5, c[2] * 0.5, n[0], n[1], n[2], uv0, uv1]);
+            out.push([
+                c[0] * 0.5,
+                c[1] * 0.5,
+                c[2] * 0.5,
+                n[0],
+                n[1],
+                n[2],
+                uv0,
+                uv1,
+            ]);
         }
     }
     out
@@ -41,26 +53,28 @@ fn build_unit_cube() -> Vec<[f32; 8]> {
 
 use crate::{
     assets,
+    interaction::{
+        build_inventory_layout, GuiType, InteractionController, PanelRect, SlotRect, UiSlotId,
+    },
     inventory::{HOTBAR_START, INVENTORY_SLOT_COUNT},
-    interaction::{build_inventory_layout, GuiType, InteractionController, PanelRect, SlotRect, UiSlotId},
     settings::PerformanceProfile,
     world::{biomes::SEA_LEVEL, BlockType, World},
 };
 
 pub mod camera;
-pub mod texture_atlas;
-pub mod mesh;
-pub mod texture;
-pub mod vertices;
-pub mod texture_registry;
 pub mod instance;
 pub mod menu;
+pub mod mesh;
 mod text;
+pub mod texture;
+pub mod texture_atlas;
+pub mod texture_registry;
+pub mod vertices;
 use camera::*;
 use menu::MenuRenderer;
-use vertices::Vertex;
 use text::{TextAlignment, TextRenderer};
 use texture_atlas::TileUV;
+use vertices::Vertex;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -72,15 +86,15 @@ pub struct MaterialUniform {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BiomeUniform {
     /// xyz = ambient rgb tint, w = ambient multiplier
-    pub ambient:    [f32; 4],
+    pub ambient: [f32; 4],
     /// xyz = fog rgb, w = fog density multiplier
-    pub fog_color:  [f32; 4],
+    pub fog_color: [f32; 4],
     /// xyz = scene grade, w = water animation time
-    pub grade:      [f32; 4],
+    pub grade: [f32; 4],
     /// xyz = regional sky/fog tint from the real climate, w unused
     pub atmosphere: [f32; 4],
     /// x = day brightness, y = fog start, z = fog end, w = sun phase
-    pub view_info:  [f32; 4],
+    pub view_info: [f32; 4],
     /// xyz = camera eye world-space position, w = sea level
     pub camera_pos: [f32; 4],
 }
@@ -337,12 +351,14 @@ pub struct State {
 /// and let the sky/fog show through. At a radius of 4 the upload set is small
 /// enough that conservative submission is the safer choice.
 fn combine_meshes(
-    meshes:    &HashMap<(i32, i32), mesh::ChunkMesh>,
-    cx: i32, cz: i32, radius: i32,
+    meshes: &HashMap<(i32, i32), mesh::ChunkMesh>,
+    cx: i32,
+    cz: i32,
+    radius: i32,
     _view_proj: &[[f32; 4]; 4],
 ) -> (Vec<Vertex>, Vec<u32>) {
     let mut verts = Vec::new();
-    let mut idxs  = Vec::new();
+    let mut idxs = Vec::new();
     for dz in -radius..=radius {
         for dx in -radius..=radius {
             let (mx, mz) = (cx + dx, cz + dz);
@@ -359,36 +375,60 @@ fn combine_meshes(
 /// Upload a vertex+index buffer pair to the GPU.
 /// Returns `(None, None)` when `vertices` is empty.
 fn upload_pair(
-    device:   &wgpu::Device,
+    device: &wgpu::Device,
     vertices: &[Vertex],
-    indices:  &[u32],
+    indices: &[u32],
 ) -> (Option<wgpu::Buffer>, Option<wgpu::Buffer>) {
     if vertices.is_empty() {
         return (None, None);
     }
     let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label:    None,
+        label: None,
         contents: bytemuck::cast_slice(vertices),
-        usage:    wgpu::BufferUsages::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX,
     });
     let ib = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label:    None,
+        label: None,
         contents: bytemuck::cast_slice(indices),
-        usage:    wgpu::BufferUsages::INDEX,
+        usage: wgpu::BufferUsages::INDEX,
     });
     (Some(vb), Some(ib))
 }
 
 fn build_crosshair_buffers(device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer, u32) {
     let vertices = [
-        UiVertex { position: [-0.028,  0.004], color: [1.0, 1.0, 1.0, 0.85] },
-        UiVertex { position: [ 0.028,  0.004], color: [1.0, 1.0, 1.0, 0.85] },
-        UiVertex { position: [ 0.028, -0.004], color: [1.0, 1.0, 1.0, 0.85] },
-        UiVertex { position: [-0.028, -0.004], color: [1.0, 1.0, 1.0, 0.85] },
-        UiVertex { position: [-0.004,  0.044], color: [1.0, 1.0, 1.0, 0.85] },
-        UiVertex { position: [ 0.004,  0.044], color: [1.0, 1.0, 1.0, 0.85] },
-        UiVertex { position: [ 0.004, -0.044], color: [1.0, 1.0, 1.0, 0.85] },
-        UiVertex { position: [-0.004, -0.044], color: [1.0, 1.0, 1.0, 0.85] },
+        UiVertex {
+            position: [-0.028, 0.004],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
+        UiVertex {
+            position: [0.028, 0.004],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
+        UiVertex {
+            position: [0.028, -0.004],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
+        UiVertex {
+            position: [-0.028, -0.004],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
+        UiVertex {
+            position: [-0.004, 0.044],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
+        UiVertex {
+            position: [0.004, 0.044],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
+        UiVertex {
+            position: [0.004, -0.044],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
+        UiVertex {
+            position: [-0.004, -0.044],
+            color: [1.0, 1.0, 1.0, 0.85],
+        },
     ];
     let indices: [u16; 12] = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
 
@@ -433,10 +473,22 @@ fn push_ui_rect(
     let bottom_ndc = 1.0 - bottom / screen_h * 2.0;
 
     let base = vertices.len() as u16;
-    vertices.push(UiVertex { position: [left_ndc, top_ndc], color });
-    vertices.push(UiVertex { position: [right_ndc, top_ndc], color });
-    vertices.push(UiVertex { position: [right_ndc, bottom_ndc], color });
-    vertices.push(UiVertex { position: [left_ndc, bottom_ndc], color });
+    vertices.push(UiVertex {
+        position: [left_ndc, top_ndc],
+        color,
+    });
+    vertices.push(UiVertex {
+        position: [right_ndc, top_ndc],
+        color,
+    });
+    vertices.push(UiVertex {
+        position: [right_ndc, bottom_ndc],
+        color,
+    });
+    vertices.push(UiVertex {
+        position: [left_ndc, bottom_ndc],
+        color,
+    });
     indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
@@ -533,14 +585,35 @@ fn push_ui_sprite(
     let uv = tile.uvs();
 
     let base = vertices.len() as u16;
-    vertices.push(UiSpriteVertex { position: [left_ndc, top_ndc], uv: uv[0], color });
-    vertices.push(UiSpriteVertex { position: [right_ndc, top_ndc], uv: uv[1], color });
-    vertices.push(UiSpriteVertex { position: [right_ndc, bottom_ndc], uv: uv[2], color });
-    vertices.push(UiSpriteVertex { position: [left_ndc, bottom_ndc], uv: uv[3], color });
+    vertices.push(UiSpriteVertex {
+        position: [left_ndc, top_ndc],
+        uv: uv[0],
+        color,
+    });
+    vertices.push(UiSpriteVertex {
+        position: [right_ndc, top_ndc],
+        uv: uv[1],
+        color,
+    });
+    vertices.push(UiSpriteVertex {
+        position: [right_ndc, bottom_ndc],
+        uv: uv[2],
+        color,
+    });
+    vertices.push(UiSpriteVertex {
+        position: [left_ndc, bottom_ndc],
+        uv: uv[3],
+        color,
+    });
     indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
-fn gameplay_panel(rect: PanelRect, fill: [f32; 4], border_color: [f32; 4], border_thickness: f32) -> UiPanel {
+fn gameplay_panel(
+    rect: PanelRect,
+    fill: [f32; 4],
+    border_color: [f32; 4],
+    border_thickness: f32,
+) -> UiPanel {
     UiPanel {
         x: rect.x,
         y: rect.y,
@@ -642,13 +715,19 @@ impl State {
         });
         let surface = instance.create_surface(window).unwrap();
 
-        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-            compatible_surface: Some(&surface),
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-        }).await.unwrap();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+            })
+            .await
+            .unwrap();
 
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default(), None).await.unwrap();
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .await
+            .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
         let format = surface_caps.formats[0];
@@ -668,31 +747,35 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth texture");
+        let depth_texture =
+            texture::Texture::create_depth_texture(&device, &config, "depth texture");
 
-        let texture_atlas = texture_atlas::AtlasTexture::new(&device, &queue).await.unwrap();
+        let texture_atlas = texture_atlas::AtlasTexture::new(&device, &queue)
+            .await
+            .unwrap();
 
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("texture layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("texture layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("texture bind group"),
@@ -710,8 +793,8 @@ impl State {
         });
 
         let camera = Camera::new(cgmath::Vector3::new(0.0, 80.0, 0.0));
-        let block_models = assets::BlockModelLoader::load_all("Assets/Models/Block/")
-            .unwrap_or_default();
+        let block_models =
+            assets::BlockModelLoader::load_all("Assets/Models/Block/").unwrap_or_default();
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera, config.width as f32 / config.height as f32);
 
@@ -721,19 +804,20 @@ impl State {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("camera layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("camera bind group"),
@@ -744,22 +828,25 @@ impl State {
             }],
         });
 
-        let material_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("material layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let material_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("material layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         let top_tint = [0.2, 0.8, 0.3];
-        let material_uniform = MaterialUniform { color_tint: [top_tint[0], top_tint[1], top_tint[2], 0.0] };
+        let material_uniform = MaterialUniform {
+            color_tint: [top_tint[0], top_tint[1], top_tint[2], 0.0],
+        };
         let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Material Uniform Buffer"),
             contents: bytemuck::cast_slice(&[material_uniform]),
@@ -776,19 +863,20 @@ impl State {
         });
 
         // Biome ambient uniform: rgb tint + multiplier
-        let biome_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("biome layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let biome_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("biome layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         let default_biome = BiomeUniform {
             ambient: [1.0, 1.0, 1.0, 1.0],
@@ -817,7 +905,12 @@ impl State {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pipeline layout"),
-            bind_group_layouts: &[&camera_bind_group_layout, &material_bind_group_layout, &texture_bind_group_layout, &biome_bind_group_layout],
+            bind_group_layouts: &[
+                &camera_bind_group_layout,
+                &material_bind_group_layout,
+                &texture_bind_group_layout,
+                &biome_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -897,19 +990,20 @@ impl State {
 
         // ── Fullscreen sky pass (sun, moon, stars, climate clouds) ────────
         let sky_shader = device.create_shader_module(wgpu::include_wgsl!("sky.wgsl"));
-        let sky_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("sky layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let sky_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("sky layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
         let sky_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sky Buffer"),
             contents: bytemuck::cast_slice(&[SkyUniform {
@@ -972,31 +1066,32 @@ impl State {
 
         // ── Weather particles (rain / snow) ────────────────────────────────
         let weather_shader = device.create_shader_module(wgpu::include_wgsl!("weather.wgsl"));
-        let weather_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("weather layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let weather_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("weather layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
         let weather_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Weather Buffer"),
             contents: bytemuck::cast_slice(&[WeatherUniform {
@@ -1027,11 +1122,12 @@ impl State {
                 },
             ],
         });
-        let weather_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("weather pipeline layout"),
-            bind_group_layouts: &[&camera_bind_group_layout, &weather_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let weather_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("weather pipeline layout"),
+                bind_group_layouts: &[&camera_bind_group_layout, &weather_bind_group_layout],
+                push_constant_ranges: &[],
+            });
         let weather_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("weather pipeline"),
             layout: Some(&weather_pipeline_layout),
@@ -1072,19 +1168,20 @@ impl State {
 
         // ── Voxel animals (instanced cubes) ────────────────────────────────
         let animals_shader = device.create_shader_module(wgpu::include_wgsl!("animals.wgsl"));
-        let animals_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("animals layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let animals_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("animals layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
         let animal_storage = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Animal Instances"),
             size: (MAX_ANIMAL_CUBES * std::mem::size_of::<AnimalInstance>()) as u64,
@@ -1099,15 +1196,16 @@ impl State {
                 resource: animal_storage.as_entire_binding(),
             }],
         });
-        let animals_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("animals pipeline layout"),
-            bind_group_layouts: &[
-                &camera_bind_group_layout,
-                &animals_bind_group_layout,
-                &texture_bind_group_layout,
-            ],
-            push_constant_ranges: &[],
-        });
+        let animals_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("animals pipeline layout"),
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                    &animals_bind_group_layout,
+                    &texture_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
         // Unit cube (36 verts, position + normal + uv) — the animal body parts.
         let cube_vertices: Vec<[f32; 8]> = build_unit_cube();
         let animal_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1177,7 +1275,11 @@ impl State {
             let ry = (i as f32 * 78.233).fract();
             let rz = (i as f32 * 37.719).fract();
             weather_particles.push(WeatherParticle {
-                pos: [(rx * 2.0 - 1.0) * 16.0, 70.0 + ry * 20.0, (rz * 2.0 - 1.0) * 16.0],
+                pos: [
+                    (rx * 2.0 - 1.0) * 16.0,
+                    70.0 + ry * 20.0,
+                    (rz * 2.0 - 1.0) * 16.0,
+                ],
                 _pad0: 0.0,
                 vel: [0.0, -26.0, 0.0],
                 _pad1: 0.0,
@@ -1232,11 +1334,12 @@ impl State {
         });
 
         let ui_sprite_shader = device.create_shader_module(wgpu::include_wgsl!("ui_sprite.wgsl"));
-        let ui_sprite_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("ui sprite pipeline layout"),
-            bind_group_layouts: &[&texture_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let ui_sprite_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ui sprite pipeline layout"),
+                bind_group_layouts: &[&texture_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let ui_sprite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ui sprite pipeline"),
@@ -1274,11 +1377,8 @@ impl State {
 
         let (crosshair_vertex_buffer, crosshair_index_buffer, crosshair_index_count) =
             build_crosshair_buffers(&device);
-        let mut text_renderer = TextRenderer::new(
-            &device,
-            config.format,
-            (config.width, config.height),
-        );
+        let mut text_renderer =
+            TextRenderer::new(&device, config.format, (config.width, config.height));
         load_font(&mut text_renderer);
 
         Self {
@@ -1391,7 +1491,12 @@ impl State {
         preferred
             .into_iter()
             .find(|mode| supported.contains(mode))
-            .unwrap_or_else(|| supported.first().copied().unwrap_or(wgpu::PresentMode::Fifo))
+            .unwrap_or_else(|| {
+                supported
+                    .first()
+                    .copied()
+                    .unwrap_or(wgpu::PresentMode::Fifo)
+            })
     }
 
     fn invalidate_world_mesh_cache(&mut self) {
@@ -1429,8 +1534,13 @@ impl State {
         self.window.request_redraw();
     }
 
-    fn ui_clear_color(mode: UiMode, elapsed: f32, ambient_darkness: f32,
-                      cloud_cover: f32, atmosphere: [f32; 3]) -> wgpu::Color {
+    fn ui_clear_color(
+        mode: UiMode,
+        elapsed: f32,
+        ambient_darkness: f32,
+        cloud_cover: f32,
+        atmosphere: [f32; 3],
+    ) -> wgpu::Color {
         match mode {
             UiMode::None => {
                 let mut c = Self::sky_color_for_time(elapsed, atmosphere);
@@ -1446,8 +1556,18 @@ impl State {
                 c.b *= 1.0 - clouds * 0.35;
                 c
             }
-            UiMode::MainMenu  => wgpu::Color { r: 0.06, g: 0.08, b: 0.12, a: 1.0 },
-            UiMode::PauseMenu => wgpu::Color { r: 0.04, g: 0.05, b: 0.08, a: 1.0 },
+            UiMode::MainMenu => wgpu::Color {
+                r: 0.06,
+                g: 0.08,
+                b: 0.12,
+                a: 1.0,
+            },
+            UiMode::PauseMenu => wgpu::Color {
+                r: 0.04,
+                g: 0.05,
+                b: 0.08,
+                a: 1.0,
+            },
         }
     }
 
@@ -1502,8 +1622,7 @@ impl State {
             let atlas_file = format!("{}/atlas.png", path);
             match std::fs::read(&atlas_file) {
                 Ok(bytes) => {
-                    let img = image::load_from_memory(&bytes)
-                        .map(|i| i.to_rgba8());
+                    let img = image::load_from_memory(&bytes).map(|i| i.to_rgba8());
                     match img {
                         Ok(rgba) => {
                             let (w, h) = rgba.dimensions();
@@ -1531,20 +1650,25 @@ impl State {
         match atlas_result {
             Ok(new_atlas) => {
                 self.texture_atlas = new_atlas;
-                self.texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("texture bind group"),
-                    layout: &self.texture_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&self.texture_atlas.view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&self.texture_atlas.sampler),
-                        },
-                    ],
-                });
+                self.texture_bind_group =
+                    self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("texture bind group"),
+                        layout: &self.texture_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(
+                                    &self.texture_atlas.view,
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(
+                                    &self.texture_atlas.sampler,
+                                ),
+                            },
+                        ],
+                    });
                 // Force full mesh rebuild so new texture coordinates are applied.
                 self.chunk_meshes.clear();
                 self.water_meshes.clear();
@@ -1569,7 +1693,9 @@ impl State {
     /// Cycle to the next available texture pack.
     pub fn next_texture_pack(&mut self) {
         let n = self.available_packs.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         let next = (self.current_pack_index + 1) % n;
         self.load_pack_by_index(next);
     }
@@ -1577,7 +1703,9 @@ impl State {
     /// Cycle to the previous available texture pack.
     pub fn prev_texture_pack(&mut self) {
         let n = self.available_packs.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         let prev = (self.current_pack_index + n - 1) % n;
         self.load_pack_by_index(prev);
     }
@@ -1586,17 +1714,17 @@ impl State {
     /// Uses the same palette and blend math so the background seamlessly continues the fog.
     fn sky_color_for_time(t: f32, atmosphere: [f32; 3]) -> wgpu::Color {
         use std::f32::consts::TAU;
-        let phase    = (t / 1200.0).fract();
-        let day      = Self::day_brightness(t);
+        let phase = (t / 1200.0).fract();
+        let day = Self::day_brightness(t);
         let sun_elev = ((phase - 0.25) * TAU).sin();
 
         // Match shader sky_color() palette exactly, then apply the regional
         // climate atmosphere tint (desert haze, rainforest teal, …).
         let ch = |night: f32, zenith: f32, haze: f32, sunset: f32, twi: f32| -> f64 {
-            let day_sky       = haze  + (zenith - haze)  * (day * 0.90).min(1.0);
-            let base          = night + (day_sky - night) * (day * 1.20).min(1.0);
-            let sunset_str    = (1.0 - sun_elev.abs() * 3.5).max(0.0);
-            let sunset_col    = sunset + (twi - sunset) * (0.4 - sun_elev * 2.0).clamp(0.0, 1.0);
+            let day_sky = haze + (zenith - haze) * (day * 0.90).min(1.0);
+            let base = night + (day_sky - night) * (day * 1.20).min(1.0);
+            let sunset_str = (1.0 - sun_elev.abs() * 3.5).max(0.0);
+            let sunset_col = sunset + (twi - sunset) * (0.4 - sun_elev * 2.0).clamp(0.0, 1.0);
             (base + (sunset_col - base) * sunset_str * (day * 4.0).min(0.78)).clamp(0.0, 1.0) as f64
         };
 
@@ -1633,7 +1761,8 @@ impl State {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
-            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth texture");
+            self.depth_texture =
+                texture::Texture::create_depth_texture(&self.device, &self.config, "depth texture");
             self.text_renderer.resize((new_size.width, new_size.height));
         }
     }
@@ -1674,8 +1803,15 @@ impl State {
         self.invalidate_world_mesh_cache();
         self.camera = Camera::new(cgmath::Vector3::new(0.0, 80.0, 0.0));
         self.camera_uniform = CameraUniform::new();
-        self.camera_uniform.update_view_proj(&self.camera, self.config.width as f32 / self.config.height as f32);
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+        self.camera_uniform.update_view_proj(
+            &self.camera,
+            self.config.width as f32 / self.config.height as f32,
+        );
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
         self.subtitle_text = None;
         self.command_prompt_text = None;
         self.interaction = InteractionController::default();
@@ -1691,37 +1827,70 @@ impl State {
         if !inventory_open {
             self.camera.tick_movement(world, input, dt);
         }
-        self.camera_uniform.update_view_proj(&self.camera, self.config.width as f32 / self.config.height as f32);
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
-        let material_uniform = MaterialUniform { color_tint: [self.top_tint[0], self.top_tint[1], self.top_tint[2], 0.0] };
-        self.queue.write_buffer(&self.material_buffer, 0, bytemuck::cast_slice(&[material_uniform]));
+        self.camera_uniform.update_view_proj(
+            &self.camera,
+            self.config.width as f32 / self.config.height as f32,
+        );
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+        let material_uniform = MaterialUniform {
+            color_tint: [self.top_tint[0], self.top_tint[1], self.top_tint[2], 0.0],
+        };
+        self.queue.write_buffer(
+            &self.material_buffer,
+            0,
+            bytemuck::cast_slice(&[material_uniform]),
+        );
 
         // Update atmosphere uniforms from the climate model at the camera position.
         let cam_x = self.camera.position.x.round() as i32;
         let cam_z = self.camera.position.z.round() as i32;
         let visuals = world.visuals_at(cam_x, cam_z);
         self.elapsed_time += dt;
-        let water_time  = self.elapsed_time * 0.55;
+        let water_time = self.elapsed_time * 0.55;
         // Sky/sun/lighting follow the game clock (0 = 06:00 → phase 0.25).
-        let sun_phase   = (self.day_fraction + 0.25).fract();
-        let day_bright  = Self::day_brightness_from_phase(sun_phase);
-        let fog_density = (visuals.fog_density.max(0.75) * performance_profile.fog_density_multiplier)
+        let sun_phase = (self.day_fraction + 0.25).fract();
+        let day_bright = Self::day_brightness_from_phase(sun_phase);
+        let fog_density = (visuals.fog_density.max(0.75)
+            * performance_profile.fog_density_multiplier)
             .clamp(0.75, 2.25);
         // Keep distance ranges stable here; density is applied once in the shader to avoid horizon bands.
         let fog_start = (performance_profile.render_radius as f32 * 10.0).clamp(20.0, 56.0);
         let fog_end =
             (performance_profile.render_radius as f32 * 22.0).clamp(fog_start + 18.0, 120.0);
-        let eye       = self.camera.position;
+        let eye = self.camera.position;
         self.atmosphere = visuals.atmosphere;
         let biome_uniform = BiomeUniform {
             ambient: visuals.ambient,
-            fog_color: [visuals.fog_color[0], visuals.fog_color[1], visuals.fog_color[2], fog_density],
-            grade: [visuals.grade[0], visuals.grade[1], visuals.grade[2], water_time],
-            atmosphere: [visuals.atmosphere[0], visuals.atmosphere[1], visuals.atmosphere[2], 1.0],
+            fog_color: [
+                visuals.fog_color[0],
+                visuals.fog_color[1],
+                visuals.fog_color[2],
+                fog_density,
+            ],
+            grade: [
+                visuals.grade[0],
+                visuals.grade[1],
+                visuals.grade[2],
+                water_time,
+            ],
+            atmosphere: [
+                visuals.atmosphere[0],
+                visuals.atmosphere[1],
+                visuals.atmosphere[2],
+                1.0,
+            ],
             view_info: [day_bright, fog_start, fog_end, sun_phase],
             camera_pos: [eye.x, eye.y, eye.z, SEA_LEVEL as f32],
         };
-        self.queue.write_buffer(&self.biome_buffer, 0, bytemuck::cast_slice(&[biome_uniform]));
+        self.queue.write_buffer(
+            &self.biome_buffer,
+            0,
+            bytemuck::cast_slice(&[biome_uniform]),
+        );
 
         // ── Sky pass uniform: camera basis + climate atmosphere ─────────────
         let fwd = self.camera.look_direction();
@@ -1736,8 +1905,18 @@ impl State {
                 up: [up.x, up.y, up.z, 0.0],
                 forward: [fwd.x, fwd.y, fwd.z, 0.0],
                 view: [1.0, aspect, self.elapsed_time, day_bright],
-                climate: [sun_phase, self.cloud_cover, self.weather_kind, self.weather_intensity],
-                atmosphere: [self.atmosphere[0], self.atmosphere[1], self.atmosphere[2], 1.0],
+                climate: [
+                    sun_phase,
+                    self.cloud_cover,
+                    self.weather_kind,
+                    self.weather_intensity,
+                ],
+                atmosphere: [
+                    self.atmosphere[0],
+                    self.atmosphere[1],
+                    self.atmosphere[2],
+                    1.0,
+                ],
             }]),
         );
 
@@ -1835,8 +2014,11 @@ impl State {
         world.unload_far_chunks(cx, cz, performance_profile.load_radius);
 
         if inventory_open {
-            self.interaction
-                .update_inventory_input(world, input, (self.config.width, self.config.height));
+            self.interaction.update_inventory_input(
+                world,
+                input,
+                (self.config.width, self.config.height),
+            );
         } else if self.input_captured {
             self.interaction.update(world, input, &self.camera, dt);
             // If a GUI opened mid-update (e.g. right-clicking an NVCrafter), release
@@ -1858,9 +2040,7 @@ impl State {
         }
 
         for &key in &dirty_chunks {
-            if world.get_chunk(key.0, key.1).is_some()
-                && !self.meshes_to_build.contains(&key)
-            {
+            if world.get_chunk(key.0, key.1).is_some() && !self.meshes_to_build.contains(&key) {
                 self.meshes_to_build.push_front(key);
             }
 
@@ -1941,15 +2121,17 @@ impl State {
                 None => break,
             };
             // Chunk may have been unloaded while sitting in the queue — skip it.
-            if world.get_chunk(key.0, key.1).is_none() { continue; }
-            let m  = mesh::ChunkMesh::build(world, key.0, key.1);
+            if world.get_chunk(key.0, key.1).is_none() {
+                continue;
+            }
+            let m = mesh::ChunkMesh::build(world, key.0, key.1);
             self.chunk_meshes.insert(key, m);
             let wm = mesh::ChunkMesh::build_water(world, key.0, key.1);
             self.water_meshes.insert(key, wm);
             built_this_frame += 1;
         }
         if built_this_frame > 0 {
-            self.needs_gpu_upload    = true;
+            self.needs_gpu_upload = true;
             self.needs_water_combine = true;
         }
 
@@ -1988,10 +2170,10 @@ impl State {
                 performance_profile.render_radius,
                 &self.camera_uniform.view_proj,
             );
-            self.num_indices      = idxs.len() as u32;
-            let (vb, ib)          = upload_pair(&self.device, &verts, &idxs);
-            self.vertex_buffer    = vb;
-            self.index_buffer     = ib;
+            self.num_indices = idxs.len() as u32;
+            let (vb, ib) = upload_pair(&self.device, &verts, &idxs);
+            self.vertex_buffer = vb;
+            self.index_buffer = ib;
             // Water is handled separately; no full water rebuild necessary here.
         }
 
@@ -2028,10 +2210,10 @@ impl State {
                 performance_profile.render_radius,
                 &self.camera_uniform.view_proj,
             );
-            self.num_water_indices    = widxs.len() as u32;
-            let (wvb, wib)            = upload_pair(&self.device, &wverts, &widxs);
-            self.water_vertex_buffer  = wvb;
-            self.water_index_buffer   = wib;
+            self.num_water_indices = widxs.len() as u32;
+            let (wvb, wib) = upload_pair(&self.device, &wverts, &widxs);
+            self.water_vertex_buffer = wvb;
+            self.water_index_buffer = wib;
         }
     }
 
@@ -2064,9 +2246,16 @@ impl State {
         low_end_enabled: bool,
     ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let clear_color =
-            Self::ui_clear_color(mode, self.elapsed_time, self.ambient_darkness, self.cloud_cover, self.atmosphere);
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let clear_color = Self::ui_clear_color(
+            mode,
+            self.elapsed_time,
+            self.ambient_darkness,
+            self.cloud_cover,
+            self.atmosphere,
+        );
         let screen_size = (self.config.width, self.config.height);
         let gui_type = if mode == UiMode::None {
             self.interaction.gui_type()
@@ -2082,10 +2271,12 @@ impl State {
 
         match mode {
             UiMode::MainMenu | UiMode::PauseMenu => {
-                for panel in self
-                    .menu_renderer
-                    .build_menu_panels(&self.text_renderer, mode, selection, low_end_enabled)
-                {
+                for panel in self.menu_renderer.build_menu_panels(
+                    &self.text_renderer,
+                    mode,
+                    selection,
+                    low_end_enabled,
+                ) {
                     push_ui_panel(&mut panel_vertices, &mut panel_indices, screen_size, panel);
                 }
             }
@@ -2123,7 +2314,8 @@ impl State {
                             ),
                         );
 
-                        let player_inventory_slots: Vec<SlotRect> = layout.player_slot_rects.iter().copied().collect();
+                        let player_inventory_slots: Vec<SlotRect> =
+                            layout.player_slot_rects.to_vec();
                         if let Some(bounds) = slot_group_bounds(&player_inventory_slots, 12.0) {
                             push_ui_panel(
                                 &mut panel_vertices,
@@ -2140,8 +2332,12 @@ impl State {
 
                         match gui_type {
                             Some(GuiType::Inventory) => {
-                                let crafting_slots: Vec<SlotRect> =
-                                    layout.player_crafting_slots.iter().flatten().copied().collect();
+                                let crafting_slots: Vec<SlotRect> = layout
+                                    .player_crafting_slots
+                                    .iter()
+                                    .flatten()
+                                    .copied()
+                                    .collect();
                                 if let Some(bounds) = slot_group_bounds(&crafting_slots, 12.0) {
                                     push_ui_panel(
                                         &mut panel_vertices,
@@ -2255,7 +2451,8 @@ impl State {
                 let visible_slots = layout.visible_slots(gui_type);
 
                 for &(slot_id, rect) in &visible_slots {
-                    let is_active = matches!(slot_id, UiSlotId::Inventory(index) if index == active_slot);
+                    let is_active =
+                        matches!(slot_id, UiSlotId::Inventory(index) if index == active_slot);
                     let is_hovered = hovered_slot == Some(slot_id);
                     let is_output = slot_id.is_output();
 
@@ -2302,7 +2499,9 @@ impl State {
                 }
 
                 if let Some(stack) = self.interaction.dragged_stack() {
-                    if let (Some(block), Some((cursor_x, cursor_y))) = (stack.block_type, self.interaction.cursor_position()) {
+                    if let (Some(block), Some((cursor_x, cursor_y))) =
+                        (stack.block_type, self.interaction.cursor_position())
+                    {
                         push_ui_sprite(
                             &mut sprite_vertices,
                             &mut sprite_indices,
@@ -2350,16 +2549,18 @@ impl State {
             None
         } else {
             Some((
-                self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("ui panel vertex buffer"),
-                    contents: bytemuck::cast_slice(&panel_vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }),
-                self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("ui panel index buffer"),
-                    contents: bytemuck::cast_slice(&panel_indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                }),
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("ui panel vertex buffer"),
+                        contents: bytemuck::cast_slice(&panel_vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("ui panel index buffer"),
+                        contents: bytemuck::cast_slice(&panel_indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    }),
                 panel_indices.len() as u32,
             ))
         };
@@ -2368,16 +2569,18 @@ impl State {
             None
         } else {
             Some((
-                self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("ui sprite vertex buffer"),
-                    contents: bytemuck::cast_slice(&sprite_vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }),
-                self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("ui sprite index buffer"),
-                    contents: bytemuck::cast_slice(&sprite_indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                }),
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("ui sprite vertex buffer"),
+                        contents: bytemuck::cast_slice(&sprite_vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("ui sprite index buffer"),
+                        contents: bytemuck::cast_slice(&sprite_indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    }),
                 sprite_indices.len() as u32,
             ))
         };
@@ -2421,7 +2624,7 @@ impl State {
                         );
                     }
 
-                    let player_inventory_slots: Vec<SlotRect> = layout.player_slot_rects.iter().copied().collect();
+                    let player_inventory_slots: Vec<SlotRect> = layout.player_slot_rects.to_vec();
                     if let Some(bounds) = slot_group_bounds(&player_inventory_slots, 12.0) {
                         let label = match gui_type {
                             Some(GuiType::NVCrafter) => "Inventory",
@@ -2441,8 +2644,12 @@ impl State {
 
                     match gui_type {
                         Some(GuiType::Inventory) => {
-                            let crafting_slots: Vec<SlotRect> =
-                                layout.player_crafting_slots.iter().flatten().copied().collect();
+                            let crafting_slots: Vec<SlotRect> = layout
+                                .player_crafting_slots
+                                .iter()
+                                .flatten()
+                                .copied()
+                                .collect();
                             if let Some(bounds) = slot_group_bounds(&crafting_slots, 12.0) {
                                 let _ = self.text_renderer.draw_text_tinted(
                                     &self.device,
@@ -2455,7 +2662,9 @@ impl State {
                                     [180, 190, 204, 255],
                                 );
                                 if let Some(output) = layout.player_crafting_output {
-                                    let arrow_x = bounds.x + bounds.width + (output.x - (bounds.x + bounds.width)) * 0.5;
+                                    let arrow_x = bounds.x
+                                        + bounds.width
+                                        + (output.x - (bounds.x + bounds.width)) * 0.5;
                                     let arrow_y = output.y + output.size * 0.5 - 9.0;
                                     let _ = self.text_renderer.draw_text_tinted(
                                         &self.device,
@@ -2495,7 +2704,9 @@ impl State {
                                     [180, 190, 204, 255],
                                 );
                                 if let Some(output) = layout.nvcrafter_output {
-                                    let arrow_x = bounds.x + bounds.width + (output.x - (bounds.x + bounds.width)) * 0.5;
+                                    let arrow_x = bounds.x
+                                        + bounds.width
+                                        + (output.x - (bounds.x + bounds.width)) * 0.5;
                                     let arrow_y = output.y + output.size * 0.5 - 9.0;
                                     let _ = self.text_renderer.draw_text_tinted(
                                         &self.device,
@@ -2589,10 +2800,14 @@ impl State {
                 }
 
                 if let Some(prompt) = self.command_prompt_text.as_deref() {
-                    let _ = self.text_renderer.render_command_prompt(&self.device, &self.queue, prompt);
+                    let _ =
+                        self.text_renderer
+                            .render_command_prompt(&self.device, &self.queue, prompt);
                 } else if !inventory_open {
                     if let Some(subtitle) = self.subtitle_text.as_deref() {
-                        let _ = self.text_renderer.render_subtitle(&self.device, &self.queue, subtitle);
+                        let _ =
+                            self.text_renderer
+                                .render_subtitle(&self.device, &self.queue, subtitle);
                     }
                 }
             }
@@ -2608,7 +2823,11 @@ impl State {
             }
         }
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("encoder") });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("encoder"),
+            });
 
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -2707,7 +2926,10 @@ impl State {
             if mode == UiMode::None && !inventory_open && self.crosshair_index_count > 0 {
                 rpass.set_pipeline(&self.ui_pipeline);
                 rpass.set_vertex_buffer(0, self.crosshair_vertex_buffer.slice(..));
-                rpass.set_index_buffer(self.crosshair_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                rpass.set_index_buffer(
+                    self.crosshair_index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
                 rpass.draw_indexed(0..self.crosshair_index_count, 0, 0..1);
             }
         }

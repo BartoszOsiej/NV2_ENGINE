@@ -1,3 +1,18 @@
+[lints.clippy]
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+identity_op = "allow"
+manual_is_multiple_of = "allow"
+manual_memcpy = "allow"
+collapsible_if = "allow"
+if_same_then_else = "allow"
+let_and_return = "allow"
+# map_or_unused removed - lint does not exist
+doc_lazy_continuation = "allow"
+field_reassign_with_default = "allow"
+upper_case_acronyms = "allow"
+diverging_sub_expression = "allow"
+
 [package]
 description = "Native voxel game engine in Rust — wgpu renderer, procedural terrain, embedded neural networks, multiplayer"
 license = "MIT"

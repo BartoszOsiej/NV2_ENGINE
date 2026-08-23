@@ -1,9 +1,4 @@
-use crate::world::{
-    self,
-    biomes::Biome,
-    chunk::CHUNK_W,
-    World,
-};
+use crate::world::{self, biomes::Biome, chunk::CHUNK_W, World};
 
 pub const LOCATE_SEARCH_RADIUS: i32 = 2048;
 
@@ -39,7 +34,11 @@ struct LocateHit {
     matched_biome: Biome,
 }
 
-pub fn execute(world: &mut World, player_origin: (f32, f32, f32), raw: &str) -> Result<CommandOutput, String> {
+pub fn execute(
+    world: &mut World,
+    player_origin: (f32, f32, f32),
+    raw: &str,
+) -> Result<CommandOutput, String> {
     let command = raw.trim();
     if command.is_empty() {
         return Err(String::from("Empty command."));
@@ -65,7 +64,11 @@ pub fn execute(world: &mut World, player_origin: (f32, f32, f32), raw: &str) -> 
     }
 }
 
-fn execute_locate(world: &mut World, player_origin: (f32, f32, f32), parts: &[&str]) -> Result<CommandOutput, String> {
+fn execute_locate(
+    world: &mut World,
+    player_origin: (f32, f32, f32),
+    parts: &[&str],
+) -> Result<CommandOutput, String> {
     if parts.len() < 2 {
         return Err(String::from(
             "Usage: /locate <plains|forest|darkforest|mountains|swamp|taiga|desert|ocean|coast|beach|river|lake> [--tp]",
@@ -85,7 +88,10 @@ fn execute_locate(world: &mut World, player_origin: (f32, f32, f32), parts: &[&s
         if *arg == "--tp" {
             teleport_after_locate = true;
         } else {
-            return Err(format!("Unknown flag '{}'. Only '--tp' is supported for /locate.", arg));
+            return Err(format!(
+                "Unknown flag '{}'. Only '--tp' is supported for /locate.",
+                arg
+            ));
         }
     }
 
@@ -99,8 +105,7 @@ fn execute_locate(world: &mut World, player_origin: (f32, f32, f32), parts: &[&s
     .ok_or_else(|| {
         format!(
             "No {} biome was found within {} blocks.",
-            requested_name,
-            LOCATE_SEARCH_RADIUS
+            requested_name, LOCATE_SEARCH_RADIUS
         )
     })?;
 
@@ -121,10 +126,7 @@ fn execute_locate(world: &mut World, player_origin: (f32, f32, f32), parts: &[&s
         return Ok(CommandOutput {
             message: format!(
                 "{} Teleported to ({:.1}, {:.1}, {:.1}).",
-                base_message,
-                teleport_target.0,
-                teleport_target.1,
-                teleport_target.2
+                base_message, teleport_target.0, teleport_target.1, teleport_target.2
             ),
             teleport_target: Some(teleport_target),
         });
@@ -151,9 +153,7 @@ fn execute_tp(world: &mut World, parts: &[&str]) -> Result<CommandOutput, String
     Ok(CommandOutput {
         message: format!(
             "Teleported to ({:.1}, {:.1}, {:.1}).",
-            teleport_target.0,
-            teleport_target.1,
-            teleport_target.2
+            teleport_target.0, teleport_target.1, teleport_target.2
         ),
         teleport_target: Some(teleport_target),
     })
@@ -165,7 +165,9 @@ fn execute_ai_export(world: &mut World, parts: &[&str]) -> Result<CommandOutput,
     }
     let path = parts[1];
     let author = parts.get(2).copied().unwrap_or("player");
-    let summary = world.ai_system.export_model(path, author, "exported in-game", "")?;
+    let summary = world
+        .ai_system
+        .export_model(path, author, "exported in-game", "")?;
     Ok(CommandOutput {
         message: format!(
             "Model exported to '{}' ({} params, v{}, {} training samples).",
@@ -199,7 +201,11 @@ fn execute_ai_dataset(world: &mut World, parts: &[&str]) -> Result<CommandOutput
         return Err(String::from("Usage: /ai_dataset <path> [epochs]"));
     }
     let path = parts[1];
-    let epochs = parts.get(2).map(|e| parse_usize(e, "epochs")).transpose()?.unwrap_or(1);
+    let epochs = parts
+        .get(2)
+        .map(|e| parse_usize(e, "epochs"))
+        .transpose()?
+        .unwrap_or(1);
     let summary = world.ai_system.train_on_dataset(path, epochs)?;
     Ok(CommandOutput {
         message: format!(
@@ -227,11 +233,21 @@ fn parse_usize(text: &str, name: &str) -> Result<usize, String> {
 }
 
 fn parse_i32(text: &str, axis: &str) -> Result<i32, String> {
-    text.parse::<i32>()
-        .map_err(|_| format!("Invalid {} coordinate '{}'. Expected an integer.", axis, text))
+    text.parse::<i32>().map_err(|_| {
+        format!(
+            "Invalid {} coordinate '{}'. Expected an integer.",
+            axis, text
+        )
+    })
 }
 
-fn locate_biome(world: &World, origin_x: i32, origin_z: i32, query: BiomeQuery, radius: i32) -> Option<LocateHit> {
+fn locate_biome(
+    world: &World,
+    origin_x: i32,
+    origin_z: i32,
+    query: BiomeQuery,
+    radius: i32,
+) -> Option<LocateHit> {
     let origin_cx = origin_x.div_euclid(CHUNK_W as i32);
     let origin_cz = origin_z.div_euclid(CHUNK_W as i32);
     let max_ring = radius.div_euclid(CHUNK_W as i32);
@@ -239,7 +255,9 @@ fn locate_biome(world: &World, origin_x: i32, origin_z: i32, query: BiomeQuery, 
     for ring in 0..=max_ring {
         let mut best_hit: Option<(i64, LocateHit)> = None;
         for (cx, cz) in chunk_ring(origin_cx, origin_cz, ring) {
-            if let Some(hit) = scan_chunk_for_biome(world, cx, cz, query, origin_x, origin_z, radius) {
+            if let Some(hit) =
+                scan_chunk_for_biome(world, cx, cz, query, origin_x, origin_z, radius)
+            {
                 let dx = hit.wx - origin_x;
                 let dz = hit.wz - origin_z;
                 let distance_sq = i64::from(dx) * i64::from(dx) + i64::from(dz) * i64::from(dz);
@@ -408,7 +426,11 @@ mod tests {
             "river",
             "lake",
         ] {
-            assert!(resolve_biome_query(name).is_some(), "missing biome alias: {}", name);
+            assert!(
+                resolve_biome_query(name).is_some(),
+                "missing biome alias: {}",
+                name
+            );
         }
     }
 
@@ -433,25 +455,49 @@ mod tests {
         let path = std::env::temp_dir().join("nv2_cmd_bundle.json");
         let path_str = path.to_str().unwrap();
 
-        let exported = execute(&mut world, (0.0, 80.0, 0.0), &format!("/ai_export {path_str} tester"))
-            .unwrap();
-        assert!(exported.message.contains("Model exported"), "got: {}", exported.message);
+        let exported = execute(
+            &mut world,
+            (0.0, 80.0, 0.0),
+            &format!("/ai_export {path_str} tester"),
+        )
+        .unwrap();
+        assert!(
+            exported.message.contains("Model exported"),
+            "got: {}",
+            exported.message
+        );
 
-        let imported = execute(&mut world, (0.0, 80.0, 0.0), &format!("/ai_import {path_str}"))
-            .unwrap();
-        assert!(imported.message.contains("Imported model by 'tester'"), "got: {}", imported.message);
+        let imported = execute(
+            &mut world,
+            (0.0, 80.0, 0.0),
+            &format!("/ai_import {path_str}"),
+        )
+        .unwrap();
+        assert!(
+            imported.message.contains("Imported model by 'tester'"),
+            "got: {}",
+            imported.message
+        );
         let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn ai_commands_validate_usage() {
         let mut world = World::new(1337);
-        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_export").unwrap_err().contains("Usage:"));
-        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_import").unwrap_err().contains("Usage:"));
-        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_dataset").unwrap_err().contains("Usage:"));
-        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_dataset x.json abc")
+        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_export")
             .unwrap_err()
-            .contains("epochs"));
+            .contains("Usage:"));
+        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_import")
+            .unwrap_err()
+            .contains("Usage:"));
+        assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_dataset")
+            .unwrap_err()
+            .contains("Usage:"));
+        assert!(
+            execute(&mut world, (0.0, 80.0, 0.0), "/ai_dataset x.json abc")
+                .unwrap_err()
+                .contains("epochs")
+        );
     }
 
     #[test]

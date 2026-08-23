@@ -467,7 +467,8 @@ impl RecipeRegistry {
     }
 
     pub fn match_grid(&self, grid: &CraftingGrid) -> Option<ItemStack> {
-        self.find_match(grid).map(|matched| self.output_for_match(matched))
+        self.find_match(grid)
+            .map(|matched| self.output_for_match(matched))
     }
 
     fn find_match(&self, grid: &CraftingGrid) -> Option<MatchedRecipeKind> {
@@ -537,7 +538,8 @@ impl NVCrafterState {
 }
 
 fn stack_of(block: BlockType, count: u32) -> ItemStack {
-    let mut stack = ItemStack::from_inventory_item(block).expect("recipe output should be inventory item");
+    let mut stack =
+        ItemStack::from_inventory_item(block).expect("recipe output should be inventory item");
     stack.count = count.min(stack.max_stack);
     stack
 }
@@ -657,7 +659,9 @@ mod tests {
             grid.set_slot(idx, Some(stack_of(block, 1)));
         }
 
-        let output = registry.match_grid(&grid).expect("expected aligned shaped recipe to match");
+        let output = registry
+            .match_grid(&grid)
+            .expect("expected aligned shaped recipe to match");
         assert_eq!(output.block_type, Some(BlockType::Chest));
     }
 
@@ -673,7 +677,9 @@ mod tests {
         grid.set_slot(0, Some(stack_of(BlockType::Stick, 1)));
         grid.set_slot(3, Some(stack_of(BlockType::Flint, 1)));
 
-        let output = registry.match_grid(&grid).expect("expected shapeless recipe to match");
+        let output = registry
+            .match_grid(&grid)
+            .expect("expected shapeless recipe to match");
         assert_eq!(output.block_type, Some(BlockType::FlintPickaxe));
     }
 
@@ -681,7 +687,14 @@ mod tests {
     fn default_registry_crafts_requested_early_game_recipes() {
         let recipes = RecipeRegistry::with_defaults();
 
-        assert_recipe_output(&recipes, 1, 1, &[(0, BlockType::TreeTrunk)], BlockType::Planks, 4);
+        assert_recipe_output(
+            &recipes,
+            1,
+            1,
+            &[(0, BlockType::TreeTrunk)],
+            BlockType::Planks,
+            4,
+        );
         assert_recipe_output(
             &recipes,
             1,
@@ -888,7 +901,14 @@ mod tests {
     fn log_based_recipes_accept_non_oak_logs() {
         let recipes = RecipeRegistry::with_defaults();
 
-        assert_recipe_output(&recipes, 1, 1, &[(0, BlockType::DarkWood)], BlockType::Planks, 4);
+        assert_recipe_output(
+            &recipes,
+            1,
+            1,
+            &[(0, BlockType::DarkWood)],
+            BlockType::Planks,
+            4,
+        );
         assert_recipe_output(
             &recipes,
             1,
@@ -905,13 +925,20 @@ mod tests {
         let mut state = NVCrafterState::new();
 
         for idx in [0usize, 1, 2, 3, 5, 6, 7, 8] {
-            state.grid.set_slot(idx, Some(stack_of(BlockType::Planks, 1)));
+            state
+                .grid
+                .set_slot(idx, Some(stack_of(BlockType::Planks, 1)));
         }
-        state.grid.set_slot(4, Some(stack_of(BlockType::TreeTrunk, 1)));
+        state
+            .grid
+            .set_slot(4, Some(stack_of(BlockType::TreeTrunk, 1)));
 
         state.update_output(&recipes);
 
-        assert_eq!(state.output.as_ref().and_then(|stack| stack.block_type), Some(BlockType::NVCrafter));
+        assert_eq!(
+            state.output.as_ref().and_then(|stack| stack.block_type),
+            Some(BlockType::NVCrafter)
+        );
     }
 
     #[test]
@@ -920,12 +947,18 @@ mod tests {
         let mut state = NVCrafterState::new();
 
         for idx in [0usize, 1, 2, 3, 5, 6, 7, 8] {
-            state.grid.set_slot(idx, Some(stack_of(BlockType::Planks, 1)));
+            state
+                .grid
+                .set_slot(idx, Some(stack_of(BlockType::Planks, 1)));
         }
-        state.grid.set_slot(4, Some(stack_of(BlockType::TreeTrunk, 1)));
+        state
+            .grid
+            .set_slot(4, Some(stack_of(BlockType::TreeTrunk, 1)));
         state.update_output(&recipes);
 
-        let output = state.take_output(&recipes).expect("expected crafter output");
+        let output = state
+            .take_output(&recipes)
+            .expect("expected crafter output");
         assert_eq!(output.block_type, Some(BlockType::NVCrafter));
         assert!(state.output.is_none());
         for idx in 0..state.grid.active_len() {

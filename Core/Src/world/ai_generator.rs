@@ -1,3 +1,11 @@
+use crate::world::block::BlockType;
+use crate::world::memplp::biome_heuristic_target as memlp_biome_target;
+use crate::world::memplp::texture_heuristic_target as memlp_texture_target;
+use crate::world::memplp::{self, argmax, one_hot_n, MeMLP};
+use ndarray::{Array1, Array2};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::sync::mpsc::{self, Receiver, Sender};
 /// AI-powered terrain and vegetation generator — powered by **MeMLP**
 /// (Modular embedded Multi-layer Perceptron Model, see [`crate::world::memplp`]).
 ///
@@ -11,30 +19,42 @@
 /// - Loads internet datasets with a graceful offline fallback
 /// - Saves and loads model checkpoints (JSON, with legacy migration)
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::path::Path;
-use ndarray::{Array1, Array2};
-use serde::{Deserialize, Serialize};
-use crate::world::block::BlockType;
-use crate::world::memplp::{self, MeMLP, argmax, one_hot_n};
-use crate::world::memplp::biome_heuristic_target as memlp_biome_target;
-use crate::world::memplp::texture_heuristic_target as memlp_texture_target;
 
 /// Default checkpoint path (relative to the working directory).
 pub const DEFAULT_CHECKPOINT: &str = "checkpoints/ai_model.json";
 
 /// Message type for AI background training
 pub enum AIMessage {
-    TrainingProgress { epoch: u32, loss: f32 },
-    TextureGenerated { seed: u64, texture_data: Vec<u8> },
-    VegetationDecision { wx: i32, wy: i32, wz: i32, block: BlockType, confidence: f32 },
+    TrainingProgress {
+        epoch: u32,
+        loss: f32,
+    },
+    TextureGenerated {
+        seed: u64,
+        texture_data: Vec<u8>,
+    },
+    VegetationDecision {
+        wx: i32,
+        wy: i32,
+        wz: i32,
+        block: BlockType,
+        confidence: f32,
+    },
     /// A player action was recorded and fed into the model.
-    PlayerFeedback { samples: usize, loss: f32 },
+    PlayerFeedback {
+        samples: usize,
+        loss: f32,
+    },
     /// An online dataset batch was merged into training.
-    OnlineDataset { source: String, samples: usize },
+    OnlineDataset {
+        source: String,
+        samples: usize,
+    },
     /// The model was saved to disk.
-    CheckpointSaved { path: String },
+    CheckpointSaved {
+        path: String,
+    },
 }
 
 /// The NV2.0 AI model — a **MeMLP** (Modular embedded Multi-layer
@@ -128,8 +148,7 @@ impl<'de> Deserialize<'de> for TerrainAI {
                 #[serde(default)]
                 player_preferences: [u32; 4],
             }
-            let n: NewFormat =
-                serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+            let n: NewFormat = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
             return Ok(Self {
                 model: n.model,
                 rng_state: n.rng_state,
@@ -275,7 +294,9 @@ impl TerrainAI {
     /// Train the biome head on one sample. `class` is 0..9 (BiomeId order).
     pub fn train_biome(&mut self, features: &[f32; 8], class: usize) -> f32 {
         let target = one_hot_n(class, memplp::BIOME_ARCH[memplp::BIOME_ARCH.len() - 1]);
-        self.model.biome.train(features, &target, self.learning_rate)
+        self.model
+            .biome
+            .train(features, &target, self.learning_rate)
     }
 
     /* ------------------------------------------------------------ */
@@ -290,7 +311,9 @@ impl TerrainAI {
     /// Train the texture head on one sample. `class` is 0..5.
     pub fn train_texture(&mut self, features: &[f32; 8], class: usize) -> f32 {
         let target = one_hot_n(class, memplp::TEXTURE_CLASSES);
-        self.model.texture.train(features, &target, self.learning_rate)
+        self.model
+            .texture
+            .train(features, &target, self.learning_rate)
     }
 
     /* ------------------------------------------------------------ */
@@ -411,62 +434,122 @@ pub fn texture_style_for_name(name: &str) -> (TexturePalette, TexturePattern) {
     let n = name.to_ascii_lowercase();
     if n.contains("log") || n.contains("wood") || n.contains("trunk") {
         (
-            TexturePalette { c0: [98, 74, 48], c1: [120, 92, 60], c2: Some([76, 56, 36]), alpha: 255 },
+            TexturePalette {
+                c0: [98, 74, 48],
+                c1: [120, 92, 60],
+                c2: Some([76, 56, 36]),
+                alpha: 255,
+            },
             TexturePattern::Wood,
         )
     } else if n.contains("leaves") || n.contains("canopy") {
         (
-            TexturePalette { c0: [56, 108, 52], c1: [86, 142, 70], c2: Some([40, 82, 40]), alpha: 235 },
+            TexturePalette {
+                c0: [56, 108, 52],
+                c1: [86, 142, 70],
+                c2: Some([40, 82, 40]),
+                alpha: 235,
+            },
             TexturePattern::Leaves,
         )
     } else if n.contains("grass") {
         (
-            TexturePalette { c0: [74, 128, 56], c1: [104, 158, 74], c2: Some([52, 96, 40]), alpha: 255 },
+            TexturePalette {
+                c0: [74, 128, 56],
+                c1: [104, 158, 74],
+                c2: Some([52, 96, 40]),
+                alpha: 255,
+            },
             TexturePattern::Noise,
         )
     } else if n.contains("sand") {
         (
-            TexturePalette { c0: [219, 205, 156], c1: [232, 220, 180], c2: None, alpha: 255 },
+            TexturePalette {
+                c0: [219, 205, 156],
+                c1: [232, 220, 180],
+                c2: None,
+                alpha: 255,
+            },
             TexturePattern::Noise,
         )
     } else if n.contains("snow") {
         (
-            TexturePalette { c0: [238, 242, 248], c1: [252, 253, 255], c2: None, alpha: 255 },
+            TexturePalette {
+                c0: [238, 242, 248],
+                c1: [252, 253, 255],
+                c2: None,
+                alpha: 255,
+            },
             TexturePattern::Noise,
         )
     } else if n.contains("water") {
         (
-            TexturePalette { c0: [20, 60, 150], c1: [50, 100, 210], c2: None, alpha: 190 },
+            TexturePalette {
+                c0: [20, 60, 150],
+                c1: [50, 100, 210],
+                c2: None,
+                alpha: 190,
+            },
             TexturePattern::Water,
         )
     } else if n.contains("lava") || n.contains("ember") || n.contains("glow") {
         (
-            TexturePalette { c0: [120, 60, 20], c1: [235, 120, 30], c2: Some([255, 200, 80]), alpha: 255 },
+            TexturePalette {
+                c0: [120, 60, 20],
+                c1: [235, 120, 30],
+                c2: Some([255, 200, 80]),
+                alpha: 255,
+            },
             TexturePattern::Lava,
         )
     } else if n.contains("ore") {
         (
-            TexturePalette { c0: [116, 118, 124], c1: [235, 210, 90], c2: Some([180, 150, 50]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 118, 124],
+                c1: [235, 210, 90],
+                c2: Some([180, 150, 50]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         )
     } else if n.contains("planks") {
         (
-            TexturePalette { c0: [160, 128, 86], c1: [178, 146, 100], c2: Some([134, 106, 70]), alpha: 255 },
+            TexturePalette {
+                c0: [160, 128, 86],
+                c1: [178, 146, 100],
+                c2: Some([134, 106, 70]),
+                alpha: 255,
+            },
             TexturePattern::Planks,
         )
     } else if n.contains("deer_fur") {
         (
-            TexturePalette { c0: [126, 96, 62], c1: [164, 132, 92], c2: Some([96, 70, 44]), alpha: 255 },
+            TexturePalette {
+                c0: [126, 96, 62],
+                c1: [164, 132, 92],
+                c2: Some([96, 70, 44]),
+                alpha: 255,
+            },
             TexturePattern::Noise,
         )
     } else if n.contains("rabbit_fur") {
         (
-            TexturePalette { c0: [198, 192, 178], c1: [224, 219, 206], c2: Some([166, 158, 142]), alpha: 255 },
+            TexturePalette {
+                c0: [198, 192, 178],
+                c1: [224, 219, 206],
+                c2: Some([166, 158, 142]),
+                alpha: 255,
+            },
             TexturePattern::Noise,
         )
     } else {
         (
-            TexturePalette { c0: [132, 122, 108], c1: [150, 140, 124], c2: None, alpha: 255 },
+            TexturePalette {
+                c0: [132, 122, 108],
+                c1: [150, 140, 124],
+                c2: None,
+                alpha: 255,
+            },
             TexturePattern::Stone,
         )
     }
@@ -474,7 +557,11 @@ pub fn texture_style_for_name(name: &str) -> (TexturePalette, TexturePattern) {
 
 /// Generate a 16×16 RGBA tile from a palette + pattern + seed (public API
 /// used by the texture atlas).
-pub fn generate_tile_texture(palette: TexturePalette, pattern: TexturePattern, seed: u64) -> Vec<u8> {
+pub fn generate_tile_texture(
+    palette: TexturePalette,
+    pattern: TexturePattern,
+    seed: u64,
+) -> Vec<u8> {
     generate_tile(palette, pattern, seed)
 }
 
@@ -483,91 +570,202 @@ pub fn texture_style_for_block(block: BlockType) -> (TexturePalette, TexturePatt
     use BlockType::*;
     match block {
         Grass | ForestFloor | BloomFloor | MossMat | MossCarpet | Fern | FernPlant => (
-            TexturePalette { c0: [74, 128, 56], c1: [104, 158, 74], c2: Some([52, 96, 40]), alpha: 255 },
+            TexturePalette {
+                c0: [74, 128, 56],
+                c1: [104, 158, 74],
+                c2: Some([52, 96, 40]),
+                alpha: 255,
+            },
             TexturePattern::Noise,
         ),
         Dirt | CoarseSoil | RootedSoil | Mud | PackedMud => (
-            TexturePalette { c0: [108, 74, 48], c1: [134, 96, 62], c2: Some([84, 58, 38]), alpha: 255 },
+            TexturePalette {
+                c0: [108, 74, 48],
+                c1: [134, 96, 62],
+                c2: Some([84, 58, 38]),
+                alpha: 255,
+            },
             TexturePattern::Noise,
         ),
         Sand => (
-            TexturePalette { c0: [219, 205, 156], c1: [232, 220, 180], c2: None, alpha: 255 },
+            TexturePalette {
+                c0: [219, 205, 156],
+                c1: [232, 220, 180],
+                c2: None,
+                alpha: 255,
+            },
             TexturePattern::Noise,
         ),
         Gravel => (
-            TexturePalette { c0: [116, 112, 108], c1: [140, 136, 130], c2: Some([90, 88, 86]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 112, 108],
+                c1: [140, 136, 130],
+                c2: Some([90, 88, 86]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         ),
         Snow => (
-            TexturePalette { c0: [238, 242, 248], c1: [252, 253, 255], c2: None, alpha: 255 },
+            TexturePalette {
+                c0: [238, 242, 248],
+                c1: [252, 253, 255],
+                c2: None,
+                alpha: 255,
+            },
             TexturePattern::Noise,
         ),
         Stone | Andesite | Tuff | SlateRock | Cobblestone | CobbleMoss => (
-            TexturePalette { c0: [116, 118, 124], c1: [138, 140, 148], c2: Some([94, 96, 102]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 118, 124],
+                c1: [138, 140, 148],
+                c2: Some([94, 96, 102]),
+                alpha: 255,
+            },
             TexturePattern::Stone,
         ),
         Bedrock => (
-            TexturePalette { c0: [48, 48, 52], c1: [72, 72, 78], c2: Some([30, 30, 34]), alpha: 255 },
+            TexturePalette {
+                c0: [48, 48, 52],
+                c1: [72, 72, 78],
+                c2: Some([30, 30, 34]),
+                alpha: 255,
+            },
             TexturePattern::Stone,
         ),
         Obsidian => (
-            TexturePalette { c0: [24, 20, 42], c1: [38, 32, 60], c2: Some([14, 12, 26]), alpha: 255 },
+            TexturePalette {
+                c0: [24, 20, 42],
+                c1: [38, 32, 60],
+                c2: Some([14, 12, 26]),
+                alpha: 255,
+            },
             TexturePattern::Stone,
         ),
         StoneBricks => (
-            TexturePalette { c0: [122, 124, 130], c1: [140, 142, 150], c2: Some([104, 106, 112]), alpha: 255 },
+            TexturePalette {
+                c0: [122, 124, 130],
+                c1: [140, 142, 150],
+                c2: Some([104, 106, 112]),
+                alpha: 255,
+            },
             TexturePattern::Planks,
         ),
         Clay => (
-            TexturePalette { c0: [152, 156, 168], c1: [170, 174, 186], c2: None, alpha: 255 },
+            TexturePalette {
+                c0: [152, 156, 168],
+                c1: [170, 174, 186],
+                c2: None,
+                alpha: 255,
+            },
             TexturePattern::Stone,
         ),
         CoalOre | SlateCoalOre => (
-            TexturePalette { c0: [110, 112, 118], c1: [70, 70, 74], c2: Some([30, 30, 32]), alpha: 255 },
+            TexturePalette {
+                c0: [110, 112, 118],
+                c1: [70, 70, 74],
+                c2: Some([30, 30, 32]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         ),
         IronOre | SlateDiamondOre => (
-            TexturePalette { c0: [116, 118, 124], c1: [214, 160, 132], c2: Some([180, 120, 90]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 118, 124],
+                c1: [214, 160, 132],
+                c2: Some([180, 120, 90]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         ),
         GoldOre => (
-            TexturePalette { c0: [116, 118, 124], c1: [255, 224, 96], c2: Some([230, 190, 50]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 118, 124],
+                c1: [255, 224, 96],
+                c2: Some([230, 190, 50]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         ),
         DiamondOre => (
-            TexturePalette { c0: [116, 118, 124], c1: [120, 235, 220], c2: Some([80, 200, 190]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 118, 124],
+                c1: [120, 235, 220],
+                c2: Some([80, 200, 190]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         ),
         EmeraldOre => (
-            TexturePalette { c0: [116, 118, 124], c1: [90, 225, 120], c2: Some([50, 190, 80]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 118, 124],
+                c1: [90, 225, 120],
+                c2: Some([50, 190, 80]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         ),
         RedstoneOre => (
-            TexturePalette { c0: [116, 118, 124], c1: [240, 80, 60], c2: Some([200, 50, 40]), alpha: 255 },
+            TexturePalette {
+                c0: [116, 118, 124],
+                c1: [240, 80, 60],
+                c2: Some([200, 50, 40]),
+                alpha: 255,
+            },
             TexturePattern::Speckle,
         ),
         TreeTrunk | NeedleWood | WarmWood | WetWood | PaleWood | DarkWood => (
-            TexturePalette { c0: [98, 74, 48], c1: [120, 92, 60], c2: Some([76, 56, 36]), alpha: 255 },
+            TexturePalette {
+                c0: [98, 74, 48],
+                c1: [120, 92, 60],
+                c2: Some([76, 56, 36]),
+                alpha: 255,
+            },
             TexturePattern::Wood,
         ),
-        TreeLeaves | NeedleCanopy | WarmCanopy | WetCanopy | PaleCanopy | BloomCanopy | DarkCanopy => (
-            TexturePalette { c0: [56, 108, 52], c1: [86, 142, 70], c2: Some([40, 82, 40]), alpha: 235 },
+        TreeLeaves | NeedleCanopy | WarmCanopy | WetCanopy | PaleCanopy | BloomCanopy
+        | DarkCanopy => (
+            TexturePalette {
+                c0: [56, 108, 52],
+                c1: [86, 142, 70],
+                c2: Some([40, 82, 40]),
+                alpha: 235,
+            },
             TexturePattern::Leaves,
         ),
         Planks => (
-            TexturePalette { c0: [160, 128, 86], c1: [178, 146, 100], c2: Some([134, 106, 70]), alpha: 255 },
+            TexturePalette {
+                c0: [160, 128, 86],
+                c1: [178, 146, 100],
+                c2: Some([134, 106, 70]),
+                alpha: 255,
+            },
             TexturePattern::Planks,
         ),
         Water => (
-            TexturePalette { c0: [20, 60, 150], c1: [50, 100, 210], c2: None, alpha: 190 },
+            TexturePalette {
+                c0: [20, 60, 150],
+                c1: [50, 100, 210],
+                c2: None,
+                alpha: 190,
+            },
             TexturePattern::Water,
         ),
         EmberRock | GlowRock => (
-            TexturePalette { c0: [120, 60, 20], c1: [235, 120, 30], c2: Some([255, 200, 80]), alpha: 255 },
+            TexturePalette {
+                c0: [120, 60, 20],
+                c1: [235, 120, 30],
+                c2: Some([255, 200, 80]),
+                alpha: 255,
+            },
             TexturePattern::Lava,
         ),
         _ => (
-            TexturePalette { c0: [132, 122, 108], c1: [150, 140, 124], c2: None, alpha: 255 },
+            TexturePalette {
+                c0: [132, 122, 108],
+                c1: [150, 140, 124],
+                c2: None,
+                alpha: 255,
+            },
             TexturePattern::Stone,
         ),
     }
@@ -618,7 +816,11 @@ fn fbm(x: f32, y: f32, seed: u64, octaves: u32) -> f32 {
     let mut freq = 1.0;
     let mut max = 0.0;
     for _ in 0..octaves {
-        total += value_noise(x * freq, y * freq, seed.wrapping_add(0x517CC1B7 * freq as u64)) * amp;
+        total += value_noise(
+            x * freq,
+            y * freq,
+            seed.wrapping_add(0x517CC1B7 * freq as u64),
+        ) * amp;
         max += amp;
         amp *= 0.5;
         freq *= 2.0;
@@ -631,7 +833,11 @@ fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
 }
 
 fn blend(c0: [u8; 3], c1: [u8; 3], t: f32) -> [u8; 3] {
-    [lerp_u8(c0[0], c1[0], t), lerp_u8(c0[1], c1[1], t), lerp_u8(c0[2], c1[2], t)]
+    [
+        lerp_u8(c0[0], c1[0], t),
+        lerp_u8(c0[1], c1[1], t),
+        lerp_u8(c0[2], c1[2], t),
+    ]
 }
 
 /// Generate a 16×16 RGBA tile from a palette + pattern.
@@ -685,7 +891,12 @@ fn generate_tile(palette: TexturePalette, pattern: TexturePattern, seed: u64) ->
                 TexturePattern::Wood => {
                     // Vertical grain: vary along X with streaks
                     let grain = value_noise(fx * 0.55, fy * 0.22, seed.wrapping_add(5));
-                    let streak = fbm(fx / 16.0 + seed_offset(seed), fy * 1.7, seed.wrapping_add(3), 2);
+                    let streak = fbm(
+                        fx / 16.0 + seed_offset(seed),
+                        fy * 1.7,
+                        seed.wrapping_add(3),
+                        2,
+                    );
                     let mut rgb = blend(palette.c0, palette.c1, grain * 0.5 + streak * 0.5);
                     if let Some(c2) = palette.c2 {
                         if streak > 0.7 {
@@ -699,7 +910,8 @@ fn generate_tile(palette: TexturePalette, pattern: TexturePattern, seed: u64) ->
                     let dx = fx - 7.5;
                     let dy = fy - 7.5;
                     let dist = (dx * dx + dy * dy).sqrt();
-                    let ring = ((dist * 1.15 + fbm(fx * 0.5, fy * 0.5, seed, 2) * 0.6).fract()).abs();
+                    let ring =
+                        ((dist * 1.15 + fbm(fx * 0.5, fy * 0.5, seed, 2) * 0.6).fract()).abs();
                     let mut rgb = blend(palette.c0, palette.c1, ring);
                     if let Some(c2) = palette.c2 {
                         if ring > 0.85 {
@@ -729,7 +941,12 @@ fn generate_tile(palette: TexturePalette, pattern: TexturePattern, seed: u64) ->
                     // Horizontal boards with dark seams every 4 px
                     let board = (fy / 4.0).floor() as u32;
                     let seam = fy % 4.0 < 0.5;
-                    let grain = fbm(fx / 16.0 + board as f32 * 0.1, fy / 16.0, seed.wrapping_add(board as u64), 2);
+                    let grain = fbm(
+                        fx / 16.0 + board as f32 * 0.1,
+                        fy / 16.0,
+                        seed.wrapping_add(board as u64),
+                        2,
+                    );
                     let mut rgb = blend(palette.c0, palette.c1, grain);
                     if seam {
                         if let Some(c2) = palette.c2 {
@@ -862,7 +1079,20 @@ fn now_iso8601() -> String {
         remaining -= days_in_year;
         year += 1;
     }
-    let month_days = [31, if is_leap_year(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let month_days = [
+        31,
+        if is_leap_year(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut month = 0u64;
     let mut day = remaining;
     for (i, &md) in month_days.iter().enumerate() {
@@ -877,7 +1107,12 @@ fn now_iso8601() -> String {
     let second = secs % 60;
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        year, month, day + 1, hour, minute, second
+        year,
+        month,
+        day + 1,
+        hour,
+        minute,
+        second
     )
 }
 
@@ -891,8 +1126,8 @@ fn is_leap_year(year: u64) -> bool {
 pub fn vegetation_class(block: BlockType) -> Option<usize> {
     use BlockType::*;
     match block {
-        Rose | DandelionFlower | TulipRed | TulipPink | TulipWhite | TulipOrange
-        | Cornflower | Allium | AzaleaFlower | Flower => Some(0),
+        Rose | DandelionFlower | TulipRed | TulipPink | TulipWhite | TulipOrange | Cornflower
+        | Allium | AzaleaFlower | Flower => Some(0),
         Fern | FernPlant => Some(1),
         Stick | StickSmall => Some(2),
         Pebble1 | Pebble2 | Pebble3 => Some(3),
@@ -902,11 +1137,7 @@ pub fn vegetation_class(block: BlockType) -> Option<usize> {
 
 /// Build an 8-feature vector for a world position using the given climate
 /// and terrain info. Kept cheap so the render loop can call it per action.
-pub fn features_from_context(
-    surface_height: f32,
-    temperature: f32,
-    humidity: f32,
-) -> [f32; 8] {
+pub fn features_from_context(surface_height: f32, temperature: f32, humidity: f32) -> [f32; 8] {
     let height = (surface_height / 512.0).clamp(0.0, 1.0);
     [
         height,      // terrain_height
@@ -986,7 +1217,7 @@ impl AISystem {
     fn new_inner(checkpoint_path: &str, load_checkpoint: bool) -> (Self, Receiver<AIMessage>) {
         let ai = if load_checkpoint {
             Arc::new(Mutex::new(
-                TerrainAI::load_checkpoint(checkpoint_path).unwrap_or_else(TerrainAI::new),
+                TerrainAI::load_checkpoint(checkpoint_path).unwrap_or_default(),
             ))
         } else {
             Arc::new(Mutex::new(TerrainAI::new()))
@@ -1152,10 +1383,9 @@ impl AISystem {
     /// The imported checkpoint is sanitised (NaN/Inf → 0.0) and persisted to
     /// the runtime checkpoint file so it survives restarts.
     pub fn import_model(&self, path: &str) -> Result<ModelSummary, String> {
-        let data = std::fs::read_to_string(path)
-            .map_err(|e| format!("cannot read {path}: {e}"))?;
-        let bundle: ModelBundle = serde_json::from_str(&data)
-            .map_err(|e| format!("invalid model bundle: {e}"))?;
+        let data = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+        let bundle: ModelBundle =
+            serde_json::from_str(&data).map_err(|e| format!("invalid model bundle: {e}"))?;
         if bundle.format != MODEL_BUNDLE_FORMAT {
             return Err(format!(
                 "not an NV2 model bundle (format '{}')",
@@ -1202,10 +1432,9 @@ impl AISystem {
     /// Validates the file (lengths, finiteness, distribution targets),
     /// runs `epochs` full passes, and reports the average loss.
     pub fn train_on_dataset(&self, path: &str, epochs: usize) -> Result<TrainSummary, String> {
-        let data = std::fs::read_to_string(path)
-            .map_err(|e| format!("cannot read {path}: {e}"))?;
-        let ds: TrainingDataset = serde_json::from_str(&data)
-            .map_err(|e| format!("invalid dataset: {e}"))?;
+        let data = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+        let ds: TrainingDataset =
+            serde_json::from_str(&data).map_err(|e| format!("invalid dataset: {e}"))?;
         if ds.samples.is_empty() {
             return Err("dataset has no samples".to_string());
         }
@@ -1324,7 +1553,12 @@ impl AISystem {
                     trained += 1;
                 }
                 if i % 50 == 0 && epoch <= 3 {
-                    println!("[AI-TRAIN] Epoch {}, Sample {}: loss={:.4}", epoch, i, total_loss / trained.max(1) as f32);
+                    println!(
+                        "[AI-TRAIN] Epoch {}, Sample {}: loss={:.4}",
+                        epoch,
+                        i,
+                        total_loss / trained.max(1) as f32
+                    );
                 }
             }
 
@@ -1340,7 +1574,11 @@ impl AISystem {
                     head_count += 2;
                 }
             }
-            let avg_loss = if trained > 0 { total_loss / trained as f32 } else { 0.0 };
+            let avg_loss = if trained > 0 {
+                total_loss / trained as f32
+            } else {
+                0.0
+            };
 
             // Throttle diagnostics + progress messages: the receiver is never
             // drained, so an unbounded stream would grow forever, and console
@@ -1348,26 +1586,30 @@ impl AISystem {
             if epoch % 100 == 0 {
                 if head_count > 0 {
                     let avg = head_loss / head_count as f32;
-                    let stats = ai.lock().map(|m| (m.model_param_count(), m.model_version())).unwrap_or((0, 0));
+                    let stats = ai
+                        .lock()
+                        .map(|m| (m.model_param_count(), m.model_version()))
+                        .unwrap_or((0, 0));
                     println!(
                         "[AI-MEMLP] Epoch {} | heads: biome+texture | loss={:.4} | params={} | version={}",
                         epoch, avg, stats.0, stats.1
                     );
                 }
-                let _ = tx.send(AIMessage::TrainingProgress { epoch, loss: avg_loss });
+                let _ = tx.send(AIMessage::TrainingProgress {
+                    epoch,
+                    loss: avg_loss,
+                });
             }
 
-            if epoch % 100 == 0 {
-                if last_checkpoint.elapsed() >= std::time::Duration::from_secs(60) {
-                    if let Ok(model) = ai.lock() {
-                        if let Err(e) = model.save_checkpoint(checkpoint_path) {
-                            eprintln!("[AI] checkpoint save failed: {e}");
-                        } else {
-                            println!("[AI] checkpoint saved ({})", model.training_samples());
-                        }
+            if epoch % 100 == 0 && last_checkpoint.elapsed() >= std::time::Duration::from_secs(60) {
+                if let Ok(model) = ai.lock() {
+                    if let Err(e) = model.save_checkpoint(checkpoint_path) {
+                        eprintln!("[AI] checkpoint save failed: {e}");
+                    } else {
+                        println!("[AI] checkpoint saved ({})", model.training_samples());
                     }
-                    last_checkpoint = std::time::Instant::now();
                 }
+                last_checkpoint = std::time::Instant::now();
             }
 
             // Cooldown every epoch: caps the loop at ~40 epochs/s so background
@@ -1382,14 +1624,14 @@ impl AISystem {
         let mut rng = rand::thread_rng();
 
         [
-            rng.gen::<f32>(),           // terrain_height
-            rng.gen::<f32>() * 0.5,     // terrain_slope
-            rng.gen::<f32>(),           // biome_temperature
-            rng.gen::<f32>(),           // biome_humidity
-            rng.gen::<f32>(),           // nearby_water_distance
-            rng.gen::<f32>(),           // nearby_vegetation_count
-            rng.gen::<f32>(),           // light_level
-            rng.gen::<f32>(),           // noise_seed_value
+            rng.gen::<f32>(),       // terrain_height
+            rng.gen::<f32>() * 0.5, // terrain_slope
+            rng.gen::<f32>(),       // biome_temperature
+            rng.gen::<f32>(),       // biome_humidity
+            rng.gen::<f32>(),       // nearby_water_distance
+            rng.gen::<f32>(),       // nearby_vegetation_count
+            rng.gen::<f32>(),       // light_level
+            rng.gen::<f32>(),       // noise_seed_value
         ]
     }
 
@@ -1411,7 +1653,6 @@ impl AISystem {
         if humidity > 0.7f32 && light < 0.4f32 {
             probs[1] = (humidity * 0.8f32).min(1.0f32);
         }
-
         // Output 2: Sticks - DEFAULT most places
         else if probs[0] < 0.3f32 && probs[1] < 0.3f32 {
             probs[2] = 0.6f32;
@@ -1441,16 +1682,17 @@ impl AISystem {
         let probs = ai.forward(features);
 
         // Find best choice
-        let (idx, &confidence) = probs.iter()
+        let (idx, &confidence) = probs
+            .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or((2, &0.0));
 
         let block = match idx {
-            0 => BlockType::Rose,          // flower
-            1 => BlockType::Fern,          // fern
-            2 => BlockType::StickSmall,    // stick
-            3 => BlockType::Pebble1,       // pebble
+            0 => BlockType::Rose,       // flower
+            1 => BlockType::Fern,       // fern
+            2 => BlockType::StickSmall, // stick
+            3 => BlockType::Pebble1,    // pebble
             _ => BlockType::Air,
         };
 
@@ -1478,7 +1720,10 @@ impl AISystem {
 
     /// Generate a 16×16 tile for a specific block type (CPU, deterministic).
     pub fn generate_block_texture(&self, block: BlockType, seed: u64) -> Vec<u8> {
-        self.ai.lock().unwrap().generate_texture_for_block(block, seed)
+        self.ai
+            .lock()
+            .unwrap()
+            .generate_texture_for_block(block, seed)
     }
 }
 
@@ -1613,7 +1858,10 @@ mod tests {
         let err = system
             .import_model(path.to_str().unwrap())
             .expect_err("garbage must be rejected");
-        assert!(err.contains("bundle") || err.contains("invalid"), "got: {err}");
+        assert!(
+            err.contains("bundle") || err.contains("invalid"),
+            "got: {err}"
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -1635,7 +1883,8 @@ mod tests {
                 targets.push([0.0, 0.0, 0.0, 1.0]);
             }
         }
-        let ds = serde_json::json!({ "name": "wet-vs-dry", "samples": samples, "targets": targets });
+        let ds =
+            serde_json::json!({ "name": "wet-vs-dry", "samples": samples, "targets": targets });
         std::fs::write(&path, ds.to_string()).unwrap();
 
         let summary = system
@@ -1665,7 +1914,11 @@ mod tests {
         assert!(err.contains("mismatch"), "got: {err}");
 
         // Empty dataset.
-        std::fs::write(&path, serde_json::json!({ "samples": [], "targets": [] }).to_string()).unwrap();
+        std::fs::write(
+            &path,
+            serde_json::json!({ "samples": [], "targets": [] }).to_string(),
+        )
+        .unwrap();
         let err = system
             .train_on_dataset(path.to_str().unwrap(), 1)
             .expect_err("empty dataset must be rejected");
@@ -1687,12 +1940,18 @@ mod tests {
             ai.record_preference(0);
         }
         let dist = ai.preference_distribution();
-        assert!(dist[1] > dist[0] && dist[1] > 0.5, "fern must dominate: {dist:?}");
+        assert!(
+            dist[1] > dist[0] && dist[1] > 0.5,
+            "fern must dominate: {dist:?}"
+        );
 
         // A neutral base target should lean toward ferns after blending.
         let base = [0.25, 0.25, 0.25, 0.25];
         let blended = ai.blended_target(base, 0.5);
-        assert!(blended[1] > blended[0], "blend must favour ferns: {blended:?}");
+        assert!(
+            blended[1] > blended[0],
+            "blend must favour ferns: {blended:?}"
+        );
         let sum: f32 = blended.iter().sum();
         assert!((sum - 1.0).abs() < 1e-4);
 
@@ -1807,13 +2066,16 @@ mod tests {
 
     #[test]
     fn test_real_checkpoint_migrates_if_present() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("checkpoints/ai_model.json");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("checkpoints/ai_model.json");
         if !path.exists() {
             return; // repo without a trained checkpoint — nothing to verify
         }
         let ai = TerrainAI::load_checkpoint(&path).expect("shipped checkpoint must load");
-        assert!(ai.model_param_count() > 0, "migrated model must have parameters");
+        assert!(
+            ai.model_param_count() > 0,
+            "migrated model must have parameters"
+        );
     }
 
     /// QA benchmark — run with:
@@ -1831,8 +2093,9 @@ mod tests {
         println!("\n## NV2.0 QA — MeMLP benchmark\n");
 
         let ai = TerrainAI::load_checkpoint(DEFAULT_CHECKPOINT).unwrap_or_else(TerrainAI::new);
-        let checkpoint_bytes =
-            std::fs::metadata(DEFAULT_CHECKPOINT).map(|m| m.len()).unwrap_or(0);
+        let checkpoint_bytes = std::fs::metadata(DEFAULT_CHECKPOINT)
+            .map(|m| m.len())
+            .unwrap_or(0);
         let _ = ai.save_checkpoint(DEFAULT_CHECKPOINT);
 
         println!("### Model\n");
@@ -1865,18 +2128,26 @@ mod tests {
             sink
         };
 
-        let _ = bench("Vegetation head forward", 50_000, Box::new(|| {
-            ai.forward(&features).iter().sum::<f32>()
-        }));
-        let _ = bench("Biome head forward", 50_000, Box::new(|| {
-            ai.predict_biome(&features) as f32
-        }));
-        let _ = bench("Texture head forward", 50_000, Box::new(|| {
-            ai.predict_texture_style(&features) as f32
-        }));
-        let _ = bench("16×16 procedural texture", 2_000, Box::new(|| {
-            ai.generate_texture_for_block(BlockType::Grass, 12_345)[0] as f32
-        }));
+        let _ = bench(
+            "Vegetation head forward",
+            50_000,
+            Box::new(|| ai.forward(&features).iter().sum::<f32>()),
+        );
+        let _ = bench(
+            "Biome head forward",
+            50_000,
+            Box::new(|| ai.predict_biome(&features) as f32),
+        );
+        let _ = bench(
+            "Texture head forward",
+            50_000,
+            Box::new(|| ai.predict_texture_style(&features) as f32),
+        );
+        let _ = bench(
+            "16×16 procedural texture",
+            2_000,
+            Box::new(|| ai.generate_texture_for_block(BlockType::Grass, 12_345)[0] as f32),
+        );
 
         println!("\n### Training (single-threaded, CPU)\n");
         println!("| Task | Throughput |");
@@ -1893,7 +2164,10 @@ mod tests {
             loss += model.backward(&f, target);
         }
         let el = start.elapsed();
-        println!("| Vegetation head | {:.1} samples/s |", train_iters as f64 / el.as_secs_f64());
+        println!(
+            "| Vegetation head | {:.1} samples/s |",
+            train_iters as f64 / el.as_secs_f64()
+        );
 
         let start = Instant::now();
         for i in 0..train_iters {
@@ -1902,7 +2176,10 @@ mod tests {
             loss += model.train_biome(&f, i % 9);
         }
         let el = start.elapsed();
-        println!("| Biome head | {:.1} samples/s |", train_iters as f64 / el.as_secs_f64());
+        println!(
+            "| Biome head | {:.1} samples/s |",
+            train_iters as f64 / el.as_secs_f64()
+        );
 
         let start = Instant::now();
         for i in 0..train_iters {
@@ -1911,7 +2188,10 @@ mod tests {
             loss += model.train_texture(&f, i % 6);
         }
         let el = start.elapsed();
-        println!("| Texture head | {:.1} samples/s |", train_iters as f64 / el.as_secs_f64());
+        println!(
+            "| Texture head | {:.1} samples/s |",
+            train_iters as f64 / el.as_secs_f64()
+        );
 
         let (system, _rx) = AISystem::new_clean();
         system.record_player_action(features, target);
@@ -1919,7 +2199,10 @@ mod tests {
         println!("\n### AISystem\n");
         println!("| Metric | Value |");
         println!("|---|---|");
-        println!("| Pending player-feedback samples | {} |", system.pending_feedback());
+        println!(
+            "| Pending player-feedback samples | {} |",
+            system.pending_feedback()
+        );
         println!(
             "| Model stats | params={}, version={}, samples={} |",
             stats.0, stats.1, stats.2
@@ -1930,7 +2213,9 @@ mod tests {
     #[test]
     fn test_player_feedback_buffer() {
         let (system, _rx) = AISystem::new_with_checkpoint(
-            &std::env::temp_dir().join("nv2_ai_feedback_test.json").to_string_lossy(),
+            &std::env::temp_dir()
+                .join("nv2_ai_feedback_test.json")
+                .to_string_lossy(),
         );
         assert_eq!(system.pending_feedback(), 0);
         system.record_player_action([0.5; 8], [1.0, 0.0, 0.0, 0.0]);

@@ -6,10 +6,10 @@
 //! and pushes a training sample into the background model — so the AI
 //! literally learns from what the player does.
 
-use cgmath::Vector3;
 use super::ai_generator::{features_from_context, one_hot, vegetation_class};
 use super::block::BlockType;
 use super::World;
+use cgmath::Vector3;
 
 /// Record that the player placed `block` at `pos`.
 pub fn record_place(world: &World, pos: Vector3<i32>, block: BlockType) {

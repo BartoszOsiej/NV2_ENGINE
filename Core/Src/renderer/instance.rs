@@ -1,4 +1,4 @@
-use cgmath::{prelude::*, Vector3, Matrix4, Quaternion};
+use cgmath::{prelude::*, Matrix4, Quaternion, Vector3};
 
 // Logiczna reprezentacja bloku w świecie
 pub struct Instance {
@@ -10,7 +10,8 @@ impl Instance {
     // Konwersja na format zrozumiały dla Shadera (Macierz Modelu)
     pub fn to_raw(&self) -> InstanceRaw {
         InstanceRaw {
-            model_matrix: (Matrix4::from_translation(self.position) * Matrix4::from(self.rotation)).into(),
+            model_matrix: (Matrix4::from_translation(self.position) * Matrix4::from(self.rotation))
+                .into(),
         }
     }
 }
@@ -65,11 +66,15 @@ pub fn create_world_map(size: i32) -> Vec<Instance> {
         for x in 0..size {
             let x_pos = (x - size / 2) as f32 * 1.05;
             let z_pos = (z - size / 2) as f32 * 1.05;
-            
+
             // Lekka fala sinusa, żeby świat nie był płaski jak decha
             let y_pos = f32::sin(x as f32 * 0.5) * 0.3;
 
-            let position = Vector3 { x: x_pos, y: y_pos, z: z_pos };
+            let position = Vector3 {
+                x: x_pos,
+                y: y_pos,
+                z: z_pos,
+            };
             let rotation = Quaternion::from_axis_angle(Vector3::unit_y(), Deg(0.0));
 
             instances.push(Instance { position, rotation });

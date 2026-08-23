@@ -23,7 +23,10 @@ pub fn user_data_dir() -> PathBuf {
             return PathBuf::from(local).join("NV2");
         }
         if let Some(home) = env::var_os("USERPROFILE") {
-            return PathBuf::from(home).join("AppData").join("Local").join("NV2");
+            return PathBuf::from(home)
+                .join("AppData")
+                .join("Local")
+                .join("NV2");
         }
     }
     #[cfg(target_os = "macos")]
@@ -52,14 +55,9 @@ pub fn user_data_dir() -> PathBuf {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
+#[derive(Default)]
 pub struct AppSettings {
     pub low_end_pc: bool,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self { low_end_pc: false }
-    }
 }
 
 impl AppSettings {
@@ -69,7 +67,11 @@ impl AppSettings {
             Ok(contents) => match serde_json::from_str(&contents) {
                 Ok(settings) => settings,
                 Err(err) => {
-                    log::warn!("Failed to parse settings file '{}': {}", path.display(), err);
+                    log::warn!(
+                        "Failed to parse settings file '{}': {}",
+                        path.display(),
+                        err
+                    );
                     Self::default()
                 }
             },

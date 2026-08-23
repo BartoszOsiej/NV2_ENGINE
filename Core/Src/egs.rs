@@ -71,7 +71,10 @@ impl EgsConfig {
 }
 
 fn env_or(name: &str, fallback: Option<String>) -> Option<String> {
-    std::env::var(name).ok().filter(|s| !s.is_empty()).or(fallback)
+    std::env::var(name)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or(fallback)
 }
 
 /// What the Epic Games Launcher passes to a launched game. NV-2.0 reads the
@@ -281,7 +284,8 @@ pub struct EosIngestStatOptions {
     pub stats_count: u32,
 }
 
-type PlatformCreateFn = unsafe extern "C" fn(options: *const EosPlatformOptions) -> EosPlatformHandle;
+type PlatformCreateFn =
+    unsafe extern "C" fn(options: *const EosPlatformOptions) -> EosPlatformHandle;
 type PlatformReleaseFn = unsafe extern "C" fn(handle: EosPlatformHandle);
 type PlatformTickFn = unsafe extern "C" fn(handle: EosPlatformHandle);
 type PlatformGetAuthFn = unsafe extern "C" fn(handle: EosPlatformHandle) -> EosAuthHandle;
@@ -463,11 +467,10 @@ impl EosBridge {
                     Ok(s) => s,
                     Err(_) => return bridge,
                 };
-            let auth_login: libloading::Symbol<AuthLoginFn> =
-                match library.get(b"EOS_Auth_Login") {
-                    Ok(s) => s,
-                    Err(_) => return bridge,
-                };
+            let auth_login: libloading::Symbol<AuthLoginFn> = match library.get(b"EOS_Auth_Login") {
+                Ok(s) => s,
+                Err(_) => return bridge,
+            };
             let auth_login_status: libloading::Symbol<AuthGetLoginStatusFn> =
                 match library.get(b"EOS_Auth_GetLoginStatus") {
                     Ok(s) => s,
@@ -564,14 +567,7 @@ impl EosBridge {
                 credentials: &mut creds,
                 scope_flags: 0,
             };
-            let _ = unsafe {
-                (symbols.6)(
-                    auth,
-                    &login_opts,
-                    std::ptr::null_mut(),
-                    on_auth_login,
-                )
-            };
+            unsafe { (symbols.6)(auth, &login_opts, std::ptr::null_mut(), on_auth_login) };
             bridge.state = EosState::Connecting;
         } else {
             bridge.state = EosState::Connected;
@@ -625,14 +621,7 @@ impl EosBridge {
             achievements_count: 1,
         };
         if let Some(unlock) = self.achievements_unlock {
-            unsafe {
-                (unlock)(
-                    self.achievements,
-                    &opts,
-                    std::ptr::null_mut(),
-                    on_unlock,
-                )
-            };
+            unsafe { (unlock)(self.achievements, &opts, std::ptr::null_mut(), on_unlock) };
         }
     }
 
@@ -654,9 +643,7 @@ impl EosBridge {
             stats_count: 1,
         };
         if let Some(ingest) = self.stats_ingest {
-            unsafe {
-                (ingest)(self.stats, &opts, std::ptr::null_mut(), on_ingest)
-            };
+            unsafe { (ingest)(self.stats, &opts, std::ptr::null_mut(), on_ingest) };
         }
     }
 

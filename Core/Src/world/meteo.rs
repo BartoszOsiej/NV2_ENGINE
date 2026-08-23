@@ -175,7 +175,9 @@ pub struct MeteoData {
 }
 
 /// Days per month (Jan..Dec) for seasonal interpolation.
-const DAYS_PER_MONTH: [f64; 12] = [31.0, 28.25, 31.0, 30.0, 31.0, 30.0, 31.0, 31.0, 30.0, 31.0, 30.0, 31.0];
+const DAYS_PER_MONTH: [f64; 12] = [
+    31.0, 28.25, 31.0, 30.0, 31.0, 30.0, 31.0, 31.0, 30.0, 31.0, 30.0, 31.0,
+];
 
 /// Interpolate a 12-month cycle to a day-of-year (1..=365).
 fn cycle_at(values: &[f64; 12], day_of_year: u32) -> f64 {
@@ -304,8 +306,7 @@ pub fn meteo_for_seed(seed: u32) -> MeteoData {
         // plausible real-world values from temperature and precipitation,
         // then let the live NASA POWER fetch refine them when online.
         let warmest = month_temps_c.iter().copied().fold(f64::MIN, f64::max);
-        let humidity_pct = (42.0 + (p_mm - 0.5) * 5.0 - (t_c - 15.0) * 0.6)
-            .clamp(12.0, 98.0);
+        let humidity_pct = (42.0 + (p_mm - 0.5) * 5.0 - (t_c - 15.0) * 0.6).clamp(12.0, 98.0);
         let solar_kwh = (7.0 * (lat.to_radians().cos()).abs()).clamp(0.5, 7.5);
         let wind_ms = (3.0 + ((100.0 - warmest.abs()) / 100.0) * 4.0).clamp(0.5, 12.0);
 
@@ -446,7 +447,10 @@ mod tests {
             let spread = m.month_temps_c.iter().copied().fold(f64::MIN, f64::max)
                 - m.month_temps_c.iter().copied().fold(f64::MAX, f64::min);
             if m.temperature_c > -5.0 {
-                assert!(spread > 3.0, "expected a real seasonal cycle, spread {spread}");
+                assert!(
+                    spread > 3.0,
+                    "expected a real seasonal cycle, spread {spread}"
+                );
             }
         }
     }
@@ -458,7 +462,12 @@ mod tests {
         let grid = climate_grid();
         let m = meteo_for_seed(0);
         let jan = grid.monthly_temps(lat, lon);
-        assert!(jan[0] < jan[6], "London Jan {:.1} should be colder than Jul {:.1}", jan[0], jan[6]);
+        assert!(
+            jan[0] < jan[6],
+            "London Jan {:.1} should be colder than Jul {:.1}",
+            jan[0],
+            jan[6]
+        );
         let _ = m;
     }
 

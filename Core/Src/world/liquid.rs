@@ -1,3 +1,6 @@
+use super::block::BlockType;
+use super::chunk::{CHUNK_D, CHUNK_H, CHUNK_W};
+use super::World;
 /// Liquid simulation system — written from scratch.
 ///
 /// ## Encoding (water_meta byte)
@@ -16,11 +19,7 @@
 /// 4. Source blocks (level 8) are never removed; they always stay in place.
 /// 5. A hard cap of MAX_CHANGES_PER_STEP limits total block changes per tick
 ///    to prevent lag during initial world flooding.
-
 use std::collections::{HashMap, HashSet};
-use super::World;
-use super::block::BlockType;
-use super::chunk::{CHUNK_W, CHUNK_D, CHUNK_H};
 
 /// Y-level below which terrain is flooded by the terrain generator.
 pub const SEA_LEVEL: i32 = super::biomes::SEA_LEVEL as i32;
@@ -43,7 +42,11 @@ const MAX_CHANGES_PER_STEP: usize = 2048;
 /// (0 = no dynamic state, 1-7 = flow, 8 = source).
 #[inline]
 pub fn decode_level(meta: u8) -> u8 {
-    if meta == 0 { 0 } else { meta.min(SOURCE_LEVEL) }
+    if meta == 0 {
+        0
+    } else {
+        meta.min(SOURCE_LEVEL)
+    }
 }
 
 /// Encode a level back to a water_meta byte.
@@ -73,20 +76,28 @@ pub fn simulate_step(world: &mut World) -> bool {
     for (cx, cz) in &chunk_keys {
         let chunk = match world.chunks.get(&(*cx, *cz)) {
             Some(c) => c,
-            None    => continue,
+            None => continue,
         };
         for lx in 0..CHUNK_W {
             for lz in 0..CHUNK_D {
                 for ly in 0..scan_top {
-                    if *chunk.get(lx, ly, lz) != BlockType::Water { continue; }
+                    if *chunk.get(lx, ly, lz) != BlockType::Water {
+                        continue;
+                    }
                     let raw = chunk.water_meta_get(lx, ly, lz);
                     // Generated terrain water is static world water (meta=0).
                     // Only explicit liquid-sim cells participate in dynamic flow.
-                    if raw == 0 { continue; }
+                    if raw == 0 {
+                        continue;
+                    }
                     let wx = cx * CHUNK_W as i32 + lx as i32;
                     let wy = ly as i32;
                     let wz = cz * CHUNK_D as i32 + lz as i32;
-                    let level = if raw == 0 || raw > SOURCE_LEVEL { SOURCE_LEVEL } else { raw };
+                    let level = if raw == 0 || raw > SOURCE_LEVEL {
+                        SOURCE_LEVEL
+                    } else {
+                        raw
+                    };
                     all_water.push((wx, wy, wz, level));
                 }
             }
@@ -97,8 +108,10 @@ pub fn simulate_step(world: &mut World) -> bool {
     all_water.sort_by_key(|(_, y, _, _)| std::cmp::Reverse(*y));
 
     // Build a fast lookup: position → current level
-    let mut level_map: HashMap<(i32, i32, i32), u8> =
-        all_water.iter().map(|&(x, y, z, l)| ((x, y, z), l)).collect();
+    let mut level_map: HashMap<(i32, i32, i32), u8> = all_water
+        .iter()
+        .map(|&(x, y, z, l)| ((x, y, z), l))
+        .collect();
 
     // ── Phase 2: propagation + decay ─────────────────────────────────────────
     let mut changes: Vec<(i32, i32, i32, u8)> = Vec::new(); // (wx,wy,wz, new_level 0=remove)
@@ -107,7 +120,9 @@ pub fn simulate_step(world: &mut World) -> bool {
     const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
     for &(wx, wy, wz, level) in &all_water {
-        if changes.len() >= MAX_CHANGES_PER_STEP { break; }
+        if changes.len() >= MAX_CHANGES_PER_STEP {
+            break;
+        }
 
         // ── Sources always refresh themselves and spread aggressively ─────
         if level == SOURCE_LEVEL {
@@ -122,7 +137,7 @@ pub fn simulate_step(world: &mut World) -> bool {
             if wy > 0 {
                 let bk = (wx, wy - 1, wz);
                 let below = world.get_block(wx, wy - 1, wz);
-                let cur   = level_map.get(&bk).cloned().unwrap_or(0);
+                let cur = level_map.get(&bk).cloned().unwrap_or(0);
                 if (below == BlockType::Air || (below == BlockType::Water && cur < FLOW_MAX))
                     && !written.contains(&bk)
                     && changes.len() < MAX_CHANGES_PER_STEP
@@ -137,9 +152,11 @@ pub fn simulate_step(world: &mut World) -> bool {
             // Lateral spread from source at FLOW_MAX - 1 (=6) to adjacent air/lower water
             let spread = FLOW_MAX - 1;
             for &(dx, dz) in &DIRS {
-                if changes.len() >= MAX_CHANGES_PER_STEP { break; }
-                let nk  = (wx + dx, wy, wz + dz);
-                let nb  = world.get_block(wx + dx, wy, wz + dz);
+                if changes.len() >= MAX_CHANGES_PER_STEP {
+                    break;
+                }
+                let nk = (wx + dx, wy, wz + dz);
+                let nb = world.get_block(wx + dx, wy, wz + dz);
                 let cur = level_map.get(&nk).cloned().unwrap_or(0);
                 if (nb == BlockType::Air || (nb == BlockType::Water && cur < spread))
                     && !written.contains(&nk)
@@ -157,7 +174,7 @@ pub fn simulate_step(world: &mut World) -> bool {
         if wy > 0 {
             let bk = (wx, wy - 1, wz);
             let below = world.get_block(wx, wy - 1, wz);
-            let cur   = level_map.get(&bk).cloned().unwrap_or(0);
+            let cur = level_map.get(&bk).cloned().unwrap_or(0);
             if (below == BlockType::Air || (below == BlockType::Water && cur < FLOW_MAX))
                 && !written.contains(&bk)
                 && changes.len() < MAX_CHANGES_PER_STEP
@@ -170,12 +187,16 @@ pub fn simulate_step(world: &mut World) -> bool {
         }
 
         // Lateral spread: only if level > 1
-        if level <= 1 { continue; }
+        if level <= 1 {
+            continue;
+        }
         let spread = level - 1;
         for &(dx, dz) in &DIRS {
-            if changes.len() >= MAX_CHANGES_PER_STEP { break; }
-            let nk  = (wx + dx, wy, wz + dz);
-            let nb  = world.get_block(wx + dx, wy, wz + dz);
+            if changes.len() >= MAX_CHANGES_PER_STEP {
+                break;
+            }
+            let nk = (wx + dx, wy, wz + dz);
+            let nb = world.get_block(wx + dx, wy, wz + dz);
             let cur = level_map.get(&nk).cloned().unwrap_or(0);
             if (nb == BlockType::Air || (nb == BlockType::Water && cur < spread))
                 && !written.contains(&nk)
@@ -193,8 +214,12 @@ pub fn simulate_step(world: &mut World) -> bool {
     // lower it by 1 (or remove it when it reaches 0).
     if changes.len() < MAX_CHANGES_PER_STEP {
         for &(wx, wy, wz, level) in &all_water {
-            if level == SOURCE_LEVEL { continue; } // sources never decay
-            if written.contains(&(wx, wy, wz)) { continue; } // already updated
+            if level == SOURCE_LEVEL {
+                continue;
+            } // sources never decay
+            if written.contains(&(wx, wy, wz)) {
+                continue;
+            } // already updated
 
             // Compute the best incoming level from all 6 neighbours
             let mut best_incoming: u8 = 0;
@@ -216,17 +241,25 @@ pub fn simulate_step(world: &mut World) -> bool {
                         let nlvl = level_map.get(&nk).cloned().unwrap_or(0);
                         if nlvl > 1 {
                             let can_give = nlvl - 1;
-                            if can_give > best_incoming { best_incoming = can_give; }
+                            if can_give > best_incoming {
+                                best_incoming = can_give;
+                            }
                         }
                     }
                 }
             }
 
-            if changes.len() >= MAX_CHANGES_PER_STEP { break; }
+            if changes.len() >= MAX_CHANGES_PER_STEP {
+                break;
+            }
 
             if best_incoming < level {
                 // This block should decay
-                let new_level = if level <= 1 || best_incoming == 0 { 0 } else { best_incoming };
+                let new_level = if level <= 1 || best_incoming == 0 {
+                    0
+                } else {
+                    best_incoming
+                };
                 changes.push((wx, wy, wz, new_level));
                 written.insert((wx, wy, wz));
             }

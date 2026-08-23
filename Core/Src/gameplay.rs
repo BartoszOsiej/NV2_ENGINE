@@ -380,12 +380,7 @@ impl EnemyManager {
 
     /// Advance the simulation: spawn while it's night, chase the player,
     /// attack when in range. Returns events (damage dealt, spawns, deaths).
-    pub fn update(
-        &mut self,
-        dt: f32,
-        player: (f32, f32),
-        is_night: bool,
-    ) -> Vec<EnemyEvent> {
+    pub fn update(&mut self, dt: f32, player: (f32, f32), is_night: bool) -> Vec<EnemyEvent> {
         let mut events = Vec::new();
 
         if is_night && self.enemies.len() < self.max_enemies {
@@ -449,10 +444,8 @@ impl EnemyManager {
             let dx = player.0 - enemy.x;
             let dz = player.1 - enemy.z;
             let dist_sq = dx * dx + dz * dz;
-            if dist_sq <= reach * reach {
-                if best.map_or(true, |(_, d)| dist_sq < d) {
-                    best = Some((enemy.id, dist_sq));
-                }
+            if dist_sq <= reach * reach && best.is_none_or(|(_, d)| dist_sq < d) {
+                best = Some((enemy.id, dist_sq));
             }
         }
         best.map(|(id, _)| {
@@ -532,7 +525,8 @@ impl ToolWear {
     }
 
     pub fn remaining(&self, tool: BlockType) -> u32 {
-        self.max_wear.saturating_sub(self.wear.get(&tool).copied().unwrap_or(0))
+        self.max_wear
+            .saturating_sub(self.wear.get(&tool).copied().unwrap_or(0))
     }
 
     pub fn broken(&self, tool: BlockType) -> bool {
@@ -560,12 +554,12 @@ impl ToolWear {
 
 // ------------------------------------------------------------------ Achievements
 pub const ACHIEVEMENTS: &[&str] = &[
-    "first-night",       // survive your first night
-    "five-nights",       // survive five nights
-    "first-kill",        // defeat your first hostile
-    "hunter",            // defeat ten hostiles
-    "full-health",       // reach full health
-    "master-crafter",    // craft an item from the 3x3 grid
+    "first-night",    // survive your first night
+    "five-nights",    // survive five nights
+    "first-kill",     // defeat your first hostile
+    "hunter",         // defeat ten hostiles
+    "full-health",    // reach full health
+    "master-crafter", // craft an item from the 3x3 grid
 ];
 
 #[derive(Clone, Debug)]
@@ -695,12 +689,15 @@ impl GameSession {
         for event in events {
             match event {
                 EnemyEvent::Spawned(id) => {
-                    fb.messages.push(format!("☠ Hostile sighted (id {id}) — it's night!"));
+                    fb.messages
+                        .push(format!("☠ Hostile sighted (id {id}) — it's night!"));
                 }
                 EnemyEvent::DamagedPlayer(amount) => {
                     let fatal = self.stats.damage(amount);
-                    fb.messages
-                        .push(format!("☠ Took {amount:.0} damage (hp {:.0})", self.stats.health));
+                    fb.messages.push(format!(
+                        "☠ Took {amount:.0} damage (hp {:.0})",
+                        self.stats.health
+                    ));
                     if fatal {
                         fb.died = true;
                     }
@@ -715,28 +712,35 @@ impl GameSession {
         }
 
         // full-health achievement
-        if self.stats.health >= self.stats.max_health {
-            if self.achievements.record_full_health() {
-                fb.messages.push("Achievement: full-health!".to_string());
-                fb.unlocked_achievements.push("full-health".to_string());
-            }
+        if self.stats.health >= self.stats.max_health && self.achievements.record_full_health() {
+            fb.messages.push("Achievement: full-health!".to_string());
+            fb.unlocked_achievements.push("full-health".to_string());
         }
         fb
     }
 
     pub fn eat(&mut self, food: f32) -> String {
         self.stats.eat(food);
-        format!("Food: {:.0}/{:.0}", self.stats.hunger, self.stats.max_hunger)
+        format!(
+            "Food: {:.0}/{:.0}",
+            self.stats.hunger, self.stats.max_hunger
+        )
     }
 
     pub fn drink(&mut self, water: f32) -> String {
         self.stats.drink(water);
-        format!("Water: {:.0}/{:.0}", self.stats.thirst, self.stats.max_thirst)
+        format!(
+            "Water: {:.0}/{:.0}",
+            self.stats.thirst, self.stats.max_thirst
+        )
     }
 
     pub fn heal_player(&mut self, amount: f32) -> String {
         self.stats.heal(amount);
-        format!("Health: {:.0}/{:.0}", self.stats.health, self.stats.max_health)
+        format!(
+            "Health: {:.0}/{:.0}",
+            self.stats.health, self.stats.max_health
+        )
     }
 
     pub fn attack_nearest(&mut self, player: (f32, f32)) -> String {
@@ -924,7 +928,9 @@ mod tests {
         mgr.enemies[0].z = 0.0;
         mgr.enemies[0].attack_cooldown = 0.0;
         let events = mgr.update(0.1, (0.0, 0.0), true);
-        assert!(events.iter().any(|e| matches!(e, EnemyEvent::DamagedPlayer(_))));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EnemyEvent::DamagedPlayer(_))));
     }
 
     #[test]
@@ -991,7 +997,7 @@ mod tests {
     fn session_night_transition_grants_achievement() {
         let mut session = GameSession::new();
         session.clock.set_time_hours(22.0); // night
-        // simulate until dawn (6:00 = 0 hours of game time)
+                                            // simulate until dawn (6:00 = 0 hours of game time)
         session.clock.set_time_hours(5.0);
         let fb = session.update(0.0, (0.0, 0.0));
         // prev_night was false (clock jumped), so no transition — reset state
