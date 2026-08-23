@@ -20,7 +20,7 @@ jobs:
       - name: Install VHS
         run: |
           curl -sLO "https://github.com/charmbracelet/vhs/releases/download/v0.11.0/vhs_0.11.0_Linux_x86_64.tar.gz"
-          tar xzf vhs_0.11.0_Linux_x86_64.tar.gz
+          tar xzf vhs_0.11.0_Linux_x86_64.tar.gz --strip-components=1
           sudo mv vhs /usr/local/bin/
           vhs --version
 
