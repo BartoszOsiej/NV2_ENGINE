@@ -30,8 +30,8 @@ jobs:
           for tape in demos/*.tape demos/*.vhs; do
             [ -f "$tape" ] || continue
             name=$(basename "$tape" | sed 's/\.[^.]*$//')
-            vhs "$tape" -o "assets/${name}.svg"
-            echo "Rendered: assets/${name}.svg"
+            vhs "$tape" -o "assets/${name}-demo.svg"
+            echo "Rendered: assets/${name}-demo.svg"
           done
 
       - name: Commit assets
