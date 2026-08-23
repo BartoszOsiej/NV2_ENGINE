@@ -27,7 +27,7 @@ item handling, block interaction, world simulation, GPU-driven rendering.
 
 
 
-![NV2 Engine Demo](assets/nv2-demo.svg)
+![NV2 Engine Demo](assets/nv2-demo.gif)
 
 
 
