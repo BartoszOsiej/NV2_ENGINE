@@ -20,6 +20,5 @@ jobs:
           files: |
             LICENSE
             README.md
-          generate_release_notes: true
           draft: false
           prerelease: false
