@@ -45,6 +45,6 @@ jobs:
             echo "No changes"
           else
             git commit -m "chore: re-render VHS demos [skip ci]"
-            git pull --rebase https://x-access-token:${{ secrets.PUSH_TOKEN }}@github.com/${{ github.repository }}.git main
+            git pull --rebase --autostash https://x-access-token:${{ secrets.PUSH_TOKEN }}@github.com/${{ github.repository }}.git main
             git push https://x-access-token:${{ secrets.PUSH_TOKEN }}@github.com/${{ github.repository }}.git
           fi

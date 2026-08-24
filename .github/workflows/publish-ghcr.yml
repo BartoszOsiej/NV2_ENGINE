@@ -2,12 +2,6 @@ name: publish-ghcr
 
 on:
   push:
-    permissions:
-      packages: write
-    tags: ["v*"]
-  workflow_dispatch:
-    permissions:
-      packages: write
 
 permissions: read-all
 

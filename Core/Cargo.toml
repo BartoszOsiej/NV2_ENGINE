@@ -12,6 +12,9 @@ doc_lazy_continuation = "allow"
 field_reassign_with_default = "allow"
 upper_case_acronyms = "allow"
 diverging_sub_expression = "allow"
+manual_range_contains = "allow"
+manual_slice_fill = "allow"
+unwrap_or_default = "allow"
 
 [package]
 description = "Native voxel game engine in Rust — wgpu renderer, procedural terrain, embedded neural networks, multiplayer"
