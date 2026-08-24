@@ -33,6 +33,7 @@ pub struct ClimateGrid {
 }
 
 impl ClimateGrid {
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     fn parse(bytes: &[u8]) -> Option<ClimateGrid> {
         if bytes.len() < 12 || &bytes[0..8] != CLIMATE_MAGIC {
             return None;
