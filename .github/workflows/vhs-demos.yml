@@ -2,15 +2,20 @@ name: VHS TUI Demos
 
 on:
   push:
+    permissions:
+      contents: write
     branches: [main, master]
     paths: ['demos/*.tape', 'demos/*.vhs', '.github/workflows/vhs-demos.yml']
   workflow_dispatch:
+    permissions:
+      contents: write
 
-permissions:
-  contents: write
+permissions: read-all
 
 jobs:
   render:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

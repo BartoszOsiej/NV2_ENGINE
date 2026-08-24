@@ -2,16 +2,19 @@ name: publish-ghcr
 
 on:
   push:
+    permissions:
+      packages: write
     tags: ["v*"]
   workflow_dispatch:
+    permissions:
+      packages: write
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write
+permissions: read-all
 
 jobs:
   build:
+    permissions:
+      packages: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

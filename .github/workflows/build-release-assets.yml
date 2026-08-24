@@ -5,10 +5,7 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
+permissions: read-all
 jobs:
   build:
     runs-on: ubuntu-latest
