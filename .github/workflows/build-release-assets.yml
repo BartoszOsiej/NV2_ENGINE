@@ -33,7 +33,6 @@ jobs:
           FILES="sbom.spdx.json"
           if [ -n "$BUNDLE" ] && [ -f "$BUNDLE" ]; then FILES="$FILES $BUNDLE"; fi
           gh release upload "${{ github.ref_name }}" $FILES --clobber
-      - name: Attach artifacts
       - name: Install cosign
         if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.0
@@ -46,8 +45,8 @@ jobs:
               cosign sign-blob --yes --output-signature "$f.sig" --output-certificate "$f.cert" "$f"
             fi
           done
+
+      - name: Create release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
-          files: |
-            Core/target/release/nv2_engine
           generate_release_notes: true
