@@ -13,6 +13,18 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: echo "Building artifacts for ${{ github.ref_name }}"
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.0
+
+      - name: Sign release artifacts
+        if: github.event_name != 'pull_request'
+        run: |
+          for f in LICENSE README.md; do
+            if [ -f "$f" ]; then
+              cosign sign-blob --yes --output-signature "$f.sig" --output-certificate "$f.cert" "$f"
+            fi
+          done
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: |
