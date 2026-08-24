@@ -29,6 +29,12 @@ jobs:
         run: |
           curl -sSfL "https://raw.githubusercontent.com/anchore/syft/main/install.sh" | sh -s -- -b /usr/local/bin v1.19.0
           syft scan dir:. -o spdx-json > sbom.spdx.json
+      - name: Create release
+        continue-on-error: true
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          generate_release_notes: true
+
       - name: Attach supply-chain artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,8 +55,3 @@ jobs:
               cosign sign-blob --yes --output-signature "$f.sig" --output-certificate "$f.cert" "$f"
             fi
           done
-
-      - name: Create release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
-        with:
-          generate_release_notes: true
