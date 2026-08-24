@@ -1,4 +1,5 @@
 #![allow(unused)]
+#![allow(clippy::manual_slice_fill, clippy::unwrap_or_default, clippy::unwrap_or_else)]
 
 use cgmath::Vector3;
 use std::env;
