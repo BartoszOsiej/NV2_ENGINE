@@ -394,7 +394,7 @@ pub fn fetch_nasa_power(lat: f64, lon: f64) -> Option<MeteoData> {
     rt.block_on(fut)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 
