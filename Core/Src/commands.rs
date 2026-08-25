@@ -450,6 +450,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // miri can't call foreign function TLS_method (OpenSSL)
     fn ai_export_import_commands_roundtrip() {
         let mut world = World::new(1337);
         let path = std::env::temp_dir().join("nv2_cmd_bundle.json");
