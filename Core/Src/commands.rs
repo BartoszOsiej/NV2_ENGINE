@@ -57,7 +57,7 @@ pub fn execute(
         "ai_import" => execute_ai_import(world, &parts),
         "ai_dataset" => execute_ai_dataset(world, &parts),
         "ai_stats" => execute_ai_stats(world),
-        "give" => execute_give(world, &parts),
+        "give" => execute_give(world, player_origin, &parts),
         "help" => execute_help(),
         "weather" => execute_weather(&parts),
         "gamemode" => execute_gamemode(&parts),
@@ -427,8 +427,11 @@ fn execute_help() -> Result<CommandOutput, String> {
     })
 }
 
-fn execute_give(world: &mut World, parts: &[&str]) -> Result<CommandOutput, String> {
-    let _ = world;
+fn execute_give(
+    world: &mut World,
+    player_origin: (f32, f32, f32),
+    parts: &[&str],
+) -> Result<CommandOutput, String> {
     if parts.len() < 2 {
         return Err(String::from(
             "Usage: /give <block_name> [count]\nExample: /give stone 64",
@@ -453,12 +456,22 @@ fn execute_give(world: &mut World, parts: &[&str]) -> Result<CommandOutput, Stri
         )
     })?;
 
+    let px = player_origin.0.floor() as i32;
+    let py = player_origin.1.floor() as i32;
+    let pz = player_origin.2.floor() as i32;
+    for i in 0..count {
+        let offset = (i as f32 * 0.3).floor() as i32;
+        let mut stack = crate::inventory::ItemStack::from_inventory_item(block)
+            .ok_or_else(|| format!("{} cannot be given as an item.", block.display_name()))?;
+        stack.count = 1;
+        world.queue_item_drop(
+            cgmath::Vector3::new(px + offset, py + 1, pz + offset),
+            stack,
+        );
+    }
+
     Ok(CommandOutput {
-        message: format!(
-            "Gave {} x {} to player. (Note: /give adds items to your inventory.)",
-            block.display_name(),
-            count
-        ),
+        message: format!("Spawned {} x {} near you.", block.display_name(), count),
         teleport_target: None,
     })
 }

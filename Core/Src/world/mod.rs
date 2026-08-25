@@ -72,6 +72,8 @@ pub struct World {
     ai_receiver: mpsc::Receiver<ai_generator::AIMessage>,
     // ── Decoration System (Phase 2) ──────────────────────────────────────
     pub decorations: DecorationManager,
+    /// Blocks placed since the last drain (for gameplay tracking).
+    blocks_placed_counter: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -126,6 +128,7 @@ impl World {
             ai_system,
             ai_receiver,
             decorations: DecorationManager::new(),
+            blocks_placed_counter: 0,
         }
     }
 
@@ -148,6 +151,7 @@ impl World {
             ai_system,
             ai_receiver,
             decorations: DecorationManager::new(),
+            blocks_placed_counter: 0,
         }
     }
 
@@ -437,6 +441,13 @@ impl World {
         &self.dropped_items
     }
 
+    /// Drain the blocks-placed counter (returns count since last drain).
+    pub fn drain_blocks_placed(&mut self) -> u32 {
+        let n = self.blocks_placed_counter;
+        self.blocks_placed_counter = 0;
+        n
+    }
+
     pub fn drain_item_drops_at(&mut self, position: Vector3<i32>) -> Vec<ItemStack> {
         let mut drained = Vec::new();
         let mut retained = Vec::with_capacity(self.dropped_items.len());
@@ -502,6 +513,7 @@ impl World {
         }
 
         self.set_block(pos.x, pos.y, pos.z, block);
+        self.blocks_placed_counter += 1;
         true
     }
 

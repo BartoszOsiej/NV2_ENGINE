@@ -797,7 +797,13 @@ impl ApplicationHandler for App {
                 if let Some(state) = self.state.as_mut() {
                     if self.mode == AppMode::Playing {
                         state.update(&mut self.world, &mut self.input, dt);
-                        let player = (state.camera.position.x, state.camera.position.z);
+                        let cam_pos = state.camera.position;
+                        let player = (cam_pos.x, cam_pos.z);
+                        // Set the current biome for enemy spawning.
+                        self.session.enemies.biome = Some(
+                            self.world
+                                .biome_at(cam_pos.x.floor() as i32, cam_pos.z.floor() as i32),
+                        );
                         let feedback = self.session.update(dt, player);
                         pending_messages.extend(feedback.messages);
                         // EOS: tick the SDK and push any newly unlocked
@@ -805,6 +811,11 @@ impl ApplicationHandler for App {
                         self.eos.tick(dt);
                         for id in &feedback.unlocked_achievements {
                             self.eos.unlock_achievement(id);
+                        }
+                        // Track block placements for achievements.
+                        let placed = self.world.drain_blocks_placed();
+                        for _ in 0..placed {
+                            self.session.achievements.record_block_placed();
                         }
                         if feedback.died {
                             pending_messages.push("You died!".to_string());
@@ -816,7 +827,6 @@ impl ApplicationHandler for App {
                         }
                         // NV-2.0: wildlife — biome-appropriate animals wander
                         // around the player and flee when approached.
-                        let cam_pos = state.camera.position;
                         let mut animal_spawns: Vec<(gameplay::AnimalKind, (f32, f32, f32))> =
                             Vec::new();
                         if let Some((kind, pos)) =

@@ -749,8 +749,7 @@ impl AchievementTracker {
         true
     }
 
-    pub fn record_kill(&mut self, kind: crate::gameplay::EnemyKind) -> bool {
-        use crate::gameplay::EnemyKind;
+    pub fn record_kill(&mut self, kind: EnemyKind) -> bool {
         self.kills += 1;
         self.kills_this_night += 1;
         let mut any = false;
@@ -1107,6 +1106,9 @@ impl GameSession {
                 EnemyEvent::DamagedPlayer(amount) => {
                     let fatal = self.stats.damage(amount);
                     self.particles.emit_combat_hit(player.0, 1.0, player.1);
+                    if self.achievements.record_near_death(self.stats.health) {
+                        fb.messages.push("Achievement: near-death!".to_string());
+                    }
                     fb.messages.push(format!(
                         "☠ Took {amount:.0} damage (hp {:.0})",
                         self.stats.health
