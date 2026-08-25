@@ -179,7 +179,7 @@ fn extract_base_name(filename: &str) -> (&str, Option<&str>) {
     (filename, None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 

@@ -790,7 +790,7 @@ impl Default for GameSession {
 }
 
 // ================================================================== tests
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 

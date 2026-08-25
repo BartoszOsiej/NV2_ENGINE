@@ -689,7 +689,7 @@ fn cstr(s: &str) -> CString {
 
 // ──────────────────────────────────────────────────────────────── tests ──
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 

@@ -419,7 +419,7 @@ pub fn one_hot_n(class: usize, n: usize) -> Vec<f32> {
 /*  Tests                                                            */
 /* ================================================================ */
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 

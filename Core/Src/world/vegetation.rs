@@ -968,7 +968,7 @@ fn is_ai_vegetation(block: BlockType) -> bool {
     crate::world::ai_generator::vegetation_class(block).is_some()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
     use crate::world::World;

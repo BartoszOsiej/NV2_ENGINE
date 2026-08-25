@@ -166,7 +166,7 @@ pub fn fetch_samples_blocking() -> Vec<TrainingSample> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 

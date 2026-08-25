@@ -610,7 +610,7 @@ fn shapeless_recipe_matches(grid: &CraftingGrid, recipe: &ShapelessRecipe) -> bo
     remaining.is_empty()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 

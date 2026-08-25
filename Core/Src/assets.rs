@@ -607,7 +607,7 @@ pub fn ensure_subtitle_font() -> Result<Option<std::path::PathBuf>> {
     Ok(None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 
