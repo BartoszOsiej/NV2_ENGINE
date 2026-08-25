@@ -3,6 +3,12 @@
 ignore = [
     "RUSTSEC-2026-0097",  # yanked core2 (transitive, can't upgrade)
     "RUSTSEC-2026-0204",  # crossbeam-epoch (transitive, no fix available)
+    "RUSTSEC-2026-0258",  # h2 unbounded empty DATA frames (transitive)
+    "RUSTSEC-2026-0194",  # quick-xml quadratic run time (transitive)
+    "RUSTSEC-2026-0195",  # quick-xml unbounded namespace allocation (transitive)
+    "RUSTSEC-2026-0196",  # cgmath unmaintained (transitive)
+    "RUSTSEC-2026-0105",  # core2 unmaintained (transitive, yanked)
+    "RUSTSEC-2024-0436",  # paste unmaintained (transitive)
 ]
 
 [licenses]

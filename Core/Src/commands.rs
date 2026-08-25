@@ -435,6 +435,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // miri can't call foreign function TLS_method (OpenSSL)
     fn tp_requires_three_coordinates() {
         let mut world = World::new(1337);
         let error = execute(&mut world, (0.0, 80.0, 0.0), "/tp 100 80").unwrap_err();
@@ -442,6 +443,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // miri can't call foreign function TLS_method (OpenSSL)
     fn ai_stats_command_reports_live_model() {
         let mut world = World::new(1337);
         let out = execute(&mut world, (0.0, 80.0, 0.0), "/ai_stats").unwrap();
@@ -503,6 +505,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // miri can't call foreign function TLS_method (OpenSSL)
     fn executes_requested_command_flow() {
         let candidate_seeds = [1337_u32, 7_654_321, 42_4242, 0x1bad_b002, 0xdec0_de01];
 
