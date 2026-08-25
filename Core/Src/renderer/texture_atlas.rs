@@ -784,7 +784,7 @@ mod tests {
         // Determinism: the same name always yields the same tile bytes.
         let (p, pat) = crate::world::ai_generator::texture_style_for_name("stone");
         let a = crate::world::ai_generator::generate_tile_texture(
-            p.clone(),
+            p,
             pat,
             crate::world::ai_generator::name_seed("stone"),
         );

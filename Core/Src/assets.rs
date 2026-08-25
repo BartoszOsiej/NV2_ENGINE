@@ -547,33 +547,6 @@ impl RecipeManager {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_shapeless_recipe() {
-        let recipe = Recipe::Shapeless {
-            name: "test".into(),
-            ingredients: vec!["wood".into(), "stick".into()],
-            result: RecipeResult {
-                item: "planks".into(),
-                count: 2,
-            },
-        };
-
-        assert!(RecipeManager::validate_shapeless(
-            &recipe,
-            &["stick".into(), "wood".into()]
-        ));
-
-        assert!(!RecipeManager::validate_shapeless(
-            &recipe,
-            &["wood".into()]
-        ));
-    }
-}
-
 /// Ensure subtitle font is placed into `Assets/Fonts/Subtitles/`.
 ///
 /// If `Doto-VariableFont_ROND,wght.ttf` is found in common locations (project root
@@ -632,4 +605,31 @@ pub fn ensure_subtitle_font() -> Result<Option<std::path::PathBuf>> {
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shapeless_recipe() {
+        let recipe = Recipe::Shapeless {
+            name: "test".into(),
+            ingredients: vec!["wood".into(), "stick".into()],
+            result: RecipeResult {
+                item: "planks".into(),
+                count: 2,
+            },
+        };
+
+        assert!(RecipeManager::validate_shapeless(
+            &recipe,
+            &["stick".into(), "wood".into()]
+        ));
+
+        assert!(!RecipeManager::validate_shapeless(
+            &recipe,
+            &["wood".into()]
+        ));
+    }
 }

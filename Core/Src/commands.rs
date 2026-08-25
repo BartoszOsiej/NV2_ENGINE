@@ -482,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // miri can't call foreign function TLS_method (OpenSSL)
     fn ai_commands_validate_usage() {
         let mut world = World::new(1337);
         assert!(execute(&mut world, (0.0, 80.0, 0.0), "/ai_export")
