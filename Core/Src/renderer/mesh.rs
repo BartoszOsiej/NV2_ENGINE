@@ -616,7 +616,7 @@ fn face_variation_seed(wx: i32, wy: i32, wz: i32, face: usize) -> f32 {
     (hash & 0x00FF_FFFF) as f32 / 16_777_215.0
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 

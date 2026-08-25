@@ -598,7 +598,7 @@ impl CameraUniform {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
     use crate::world::World;

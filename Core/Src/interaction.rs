@@ -1212,7 +1212,7 @@ fn drop_roll(position: Vector3<i32>, salt: u64) -> u64 {
     value ^ (value >> 31)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 
@@ -1291,6 +1291,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // miri can't call foreign function TLS_method (OpenSSL)
     fn leaf_collection_never_searches_downward() {
         let mut world = World::new(456);
         let trunk = Vector3::new(0, 120, 0);
