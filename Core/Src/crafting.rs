@@ -455,6 +455,348 @@ impl RecipeRegistry {
             1,
         );
 
+        // ── NV2.2: Stone tool set ───────────────────────────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Cobblestone),
+                None,
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Stick),
+                None,
+                None,
+                Some(BlockType::Stick),
+                None,
+            ],
+            BlockType::StoneAxe,
+            1,
+        );
+        register_shaped(
+            &mut recipes,
+            1,
+            3,
+            vec![
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Stick),
+                Some(BlockType::Stick),
+            ],
+            BlockType::StoneShovel,
+            1,
+        );
+        register_shaped(
+            &mut recipes,
+            1,
+            3,
+            vec![
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Stick),
+            ],
+            BlockType::StoneSword,
+            1,
+        );
+
+        // ── NV2.2: Iron tool set ───────────────────────────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                None,
+                Some(BlockType::IronIngot),
+                Some(BlockType::Stick),
+                None,
+                None,
+                Some(BlockType::Stick),
+                None,
+            ],
+            BlockType::IronAxe,
+            1,
+        );
+        register_shaped(
+            &mut recipes,
+            1,
+            3,
+            vec![
+                Some(BlockType::IronIngot),
+                Some(BlockType::Stick),
+                Some(BlockType::Stick),
+            ],
+            BlockType::IronShovel,
+            1,
+        );
+        register_shaped(
+            &mut recipes,
+            1,
+            3,
+            vec![
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::Stick),
+            ],
+            BlockType::IronSword,
+            1,
+        );
+
+        // ── NV2.2: Diamond tool set ───────────────────────────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::Diamond),
+                Some(BlockType::Diamond),
+                None,
+                Some(BlockType::Diamond),
+                Some(BlockType::Stick),
+                None,
+                None,
+                Some(BlockType::Stick),
+                None,
+            ],
+            BlockType::DiamondAxe,
+            1,
+        );
+        register_shaped(
+            &mut recipes,
+            1,
+            3,
+            vec![
+                Some(BlockType::Diamond),
+                Some(BlockType::Stick),
+                Some(BlockType::Stick),
+            ],
+            BlockType::DiamondShovel,
+            1,
+        );
+        register_shaped(
+            &mut recipes,
+            1,
+            3,
+            vec![
+                Some(BlockType::Diamond),
+                Some(BlockType::Diamond),
+                Some(BlockType::Stick),
+            ],
+            BlockType::DiamondSword,
+            1,
+        );
+        // Diamond pickaxe
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::Diamond),
+                Some(BlockType::Diamond),
+                Some(BlockType::Diamond),
+                None,
+                Some(BlockType::Stick),
+                None,
+                None,
+                Some(BlockType::Stick),
+                None,
+            ],
+            BlockType::DiamondPickaxe,
+            1,
+        );
+
+        // ── NV2.2: Glass (smelted sand) — 2×2 sand → 4 glass ──────────
+        register_shaped(
+            &mut recipes,
+            2,
+            2,
+            vec![
+                Some(BlockType::Sand),
+                Some(BlockType::Sand),
+                Some(BlockType::Sand),
+                Some(BlockType::Sand),
+            ],
+            BlockType::Glass,
+            4,
+        );
+
+        // ── NV2.2: Bricks — 2×2 stone_bricks → 4 bricks ──────────────
+        register_shaped(
+            &mut recipes,
+            2,
+            2,
+            vec![
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Sand),
+                Some(BlockType::Sand),
+                Some(BlockType::Cobblestone),
+            ],
+            BlockType::Bricks,
+            4,
+        );
+
+        // ── NV2.2: Terracotta — 2×2 clay → 4 terracotta ──────────────
+        register_shaped(
+            &mut recipes,
+            2,
+            2,
+            vec![
+                Some(BlockType::Clay),
+                Some(BlockType::Clay),
+                Some(BlockType::Clay),
+                Some(BlockType::Clay),
+            ],
+            BlockType::Terracotta,
+            4,
+        );
+
+        // ── NV2.2: Bookshelf — 3 planks + 3 sticks ───────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::Planks),
+                Some(BlockType::Planks),
+                Some(BlockType::Planks),
+                Some(BlockType::Stick),
+                Some(BlockType::Stick),
+                Some(BlockType::Stick),
+                Some(BlockType::Planks),
+                Some(BlockType::Planks),
+                Some(BlockType::Planks),
+            ],
+            BlockType::Bookshelf,
+            1,
+        );
+
+        // ── NV2.2: Lantern — 8 iron ingots around torch ───────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::Torch),
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+            ],
+            BlockType::Lantern,
+            1,
+        );
+
+        // ── NV2.2: Campfire — 3 logs + 3 sticks ──────────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                None,
+                Some(BlockType::Stick),
+                None,
+                Some(BlockType::TreeTrunk),
+                Some(BlockType::Stick),
+                Some(BlockType::TreeTrunk),
+                Some(BlockType::TreeTrunk),
+                Some(BlockType::Stick),
+                Some(BlockType::TreeTrunk),
+            ],
+            BlockType::Campfire,
+            1,
+        );
+
+        // ── NV2.2: Barrel — 6 planks + 2 sticks ──────────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::Planks),
+                None,
+                Some(BlockType::Planks),
+                Some(BlockType::Planks),
+                None,
+                Some(BlockType::Planks),
+                Some(BlockType::Planks),
+                None,
+                Some(BlockType::Planks),
+            ],
+            BlockType::Barrel,
+            1,
+        );
+
+        // ── NV2.2: Anvil — 4 iron ingots + 3 blocks ──────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                None,
+                Some(BlockType::IronIngot),
+                None,
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Cobblestone),
+                Some(BlockType::Cobblestone),
+            ],
+            BlockType::Anvil,
+            1,
+        );
+
+        // ── NV2.2: Grindstone — 2 sticks + 3 planks ─────────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::Stick),
+                None,
+                Some(BlockType::Stick),
+                Some(BlockType::Planks),
+                None,
+                Some(BlockType::Planks),
+                None,
+                Some(BlockType::Planks),
+                None,
+            ],
+            BlockType::Grindstone,
+            1,
+        );
+
+        // ── NV2.2: Stonecutter — 4 iron ingots + 1 stone ─────────────
+        register_shaped(
+            &mut recipes,
+            3,
+            3,
+            vec![
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                Some(BlockType::IronIngot),
+                None,
+                Some(BlockType::Stone),
+                None,
+                None,
+                None,
+                None,
+            ],
+            BlockType::Stonecutter,
+            1,
+        );
+
+        // Charcoal: coal_ore shapeless → charcoal
+        recipes.register_shapeless(ShapelessRecipe {
+            ingredients: vec![BlockType::CoalOre],
+            output: stack_of(BlockType::Charcoal, 1),
+        });
+
         recipes
     }
 

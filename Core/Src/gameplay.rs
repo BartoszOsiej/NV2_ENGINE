@@ -335,9 +335,68 @@ impl Default for AnimalManager {
 }
 
 // ------------------------------------------------------------------ Enemy
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnemyKind {
+    Zombie,
+    Skeleton,
+    Spider,
+    Creeper,
+}
+
+impl EnemyKind {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            EnemyKind::Zombie => "Zombie",
+            EnemyKind::Skeleton => "Skeleton",
+            EnemyKind::Spider => "Spider",
+            EnemyKind::Creeper => "Creeper",
+        }
+    }
+
+    pub fn color(self) -> [f32; 3] {
+        match self {
+            EnemyKind::Zombie => [0.30, 0.55, 0.30],
+            EnemyKind::Skeleton => [0.85, 0.85, 0.80],
+            EnemyKind::Spider => [0.25, 0.20, 0.15],
+            EnemyKind::Creeper => [0.20, 0.75, 0.20],
+        }
+    }
+
+    pub fn stats(self) -> (f32, f32, f32, f32, f32) {
+        // (hp, speed, attack_damage, attack_cooldown, range)
+        match self {
+            EnemyKind::Zombie => (20.0, 2.2, 3.0, 1.5, 1.6),
+            EnemyKind::Skeleton => (16.0, 2.8, 4.0, 2.0, 3.0),
+            EnemyKind::Spider => (12.0, 4.0, 2.0, 0.8, 1.4),
+            EnemyKind::Creeper => (14.0, 1.8, 8.0, 3.0, 1.2),
+        }
+    }
+
+    /// Which biomes this enemy spawns in.
+    pub fn spawns_in(self, biome: crate::world::biomes::BiomeId) -> bool {
+        use crate::world::biomes::BiomeId;
+        match self {
+            EnemyKind::Zombie => true, // everywhere at night
+            EnemyKind::Skeleton => matches!(
+                biome,
+                BiomeId::Plains | BiomeId::Desert | BiomeId::Taiga | BiomeId::Mountains
+            ),
+            EnemyKind::Spider => matches!(
+                biome,
+                BiomeId::Forest | BiomeId::DarkForest | BiomeId::Swamp | BiomeId::Taiga
+            ),
+            EnemyKind::Creeper => matches!(
+                biome,
+                BiomeId::Plains | BiomeId::Forest | BiomeId::Coast | BiomeId::DarkForest
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Enemy {
     pub id: u64,
+    pub kind: EnemyKind,
     pub x: f32,
     pub z: f32,
     pub hp: f32,
@@ -346,13 +405,15 @@ pub struct Enemy {
     pub attack_cooldown: f32,
     pub attack_damage: f32,
     pub range: f32,
+    /// Whether a creeper is about to explode.
+    pub fuse_timer: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EnemyEvent {
-    Spawned(u64),
+    Spawned(u64, EnemyKind),
     DamagedPlayer(f32),
-    Killed(u64),
+    Killed(EnemyKind),
 }
 
 pub struct EnemyManager {
@@ -364,6 +425,8 @@ pub struct EnemyManager {
     pub spawn_interval: f32,
     /// Maximum simultaneous enemies.
     pub max_enemies: usize,
+    /// Current biome at player position (for biome-aware spawning).
+    pub biome: Option<crate::world::biomes::BiomeId>,
 }
 
 impl EnemyManager {
@@ -375,6 +438,7 @@ impl EnemyManager {
             kills: 0,
             spawn_interval: 6.0,
             max_enemies: 5,
+            biome: None,
         }
     }
 
@@ -387,7 +451,8 @@ impl EnemyManager {
             self.spawn_timer -= dt;
             if self.spawn_timer <= 0.0 {
                 self.spawn_near(player);
-                events.push(EnemyEvent::Spawned(self.next_id - 1));
+                let spawned = &self.enemies.last().unwrap();
+                events.push(EnemyEvent::Spawned(spawned.id, spawned.kind));
                 self.spawn_timer = self.spawn_interval;
             }
         } else if !is_night {
@@ -419,19 +484,71 @@ impl EnemyManager {
         events
     }
 
+    fn pick_kind(&self) -> EnemyKind {
+        use crate::world::biomes::BiomeId;
+        let biome = self.biome.unwrap_or(BiomeId::Plains);
+        // Weighted random selection based on biome
+        let seed = self.next_id;
+        let roll = (seed as f32 * 0.618_034).fract(); // golden ratio hash
+        match biome {
+            BiomeId::Forest | BiomeId::DarkForest | BiomeId::Swamp => {
+                if roll < 0.35 {
+                    EnemyKind::Zombie
+                } else if roll < 0.60 {
+                    EnemyKind::Skeleton
+                } else if roll < 0.85 {
+                    EnemyKind::Spider
+                } else {
+                    EnemyKind::Creeper
+                }
+            }
+            BiomeId::Desert => {
+                if roll < 0.45 {
+                    EnemyKind::Zombie
+                } else if roll < 0.80 {
+                    EnemyKind::Skeleton
+                } else {
+                    EnemyKind::Creeper
+                }
+            }
+            BiomeId::Taiga | BiomeId::Mountains => {
+                if roll < 0.40 {
+                    EnemyKind::Zombie
+                } else if roll < 0.70 {
+                    EnemyKind::Skeleton
+                } else {
+                    EnemyKind::Spider
+                }
+            }
+            _ => {
+                if roll < 0.50 {
+                    EnemyKind::Zombie
+                } else if roll < 0.75 {
+                    EnemyKind::Skeleton
+                } else {
+                    EnemyKind::Creeper
+                }
+            }
+        }
+    }
+
     pub fn spawn_near(&mut self, player: (f32, f32)) {
+        let kind = self.pick_kind();
+        let (hp, speed, attack_damage, attack_cooldown, range) = kind.stats();
         let angle = self.next_id as f32 * 2.399_963; // golden angle
         let radius = 12.0 + (self.next_id % 5) as f32 * 3.0;
         self.enemies.push(Enemy {
             id: self.next_id,
+            kind,
             x: player.0 + angle.cos() * radius,
             z: player.1 + angle.sin() * radius,
-            hp: 10.0,
-            max_hp: 10.0,
-            speed: 2.2,
-            attack_cooldown: 1.0,
-            attack_damage: 2.0,
-            range: 1.6,
+            hp,
+            max_hp: hp,
+            speed,
+            attack_cooldown,
+            attack_damage,
+            range,
+            fuse_timer: 0.0,
         });
         self.next_id += 1;
     }
@@ -454,14 +571,15 @@ impl EnemyManager {
         })
     }
 
-    /// Deal damage to an enemy by id. Returns Killed(id) when it dies.
+    /// Deal damage to an enemy by id. Returns Killed(kind) when it dies.
     pub fn damage_enemy(&mut self, id: u64, amount: f32) -> Option<EnemyEvent> {
         if let Some(idx) = self.enemies.iter().position(|e| e.id == id) {
             self.enemies[idx].hp -= amount;
             if self.enemies[idx].hp <= 0.0 {
+                let kind = self.enemies[idx].kind;
                 self.enemies.remove(idx);
                 self.kills += 1;
-                return Some(EnemyEvent::Killed(id));
+                return Some(EnemyEvent::Killed(kind));
             }
         }
         None
@@ -554,12 +672,39 @@ impl ToolWear {
 
 // ------------------------------------------------------------------ Achievements
 pub const ACHIEVEMENTS: &[&str] = &[
-    "first-night",    // survive your first night
-    "five-nights",    // survive five nights
-    "first-kill",     // defeat your first hostile
-    "hunter",         // defeat ten hostiles
-    "full-health",    // reach full health
-    "master-crafter", // craft an item from the 3x3 grid
+    // Survival
+    "first-night",
+    "five-nights",
+    "ten-nights",
+    "full-health",
+    "iron-man",
+    "last-stand",
+    "undying",
+    // Combat
+    "first-kill",
+    "hunter",
+    "slayer",
+    "monster-slayer",
+    "creeper-killer",
+    "spider-slayer",
+    "skeleton-hunter",
+    // Mining
+    "first-ore",
+    "deep-miner",
+    "diamond-hunter",
+    "obsidian-breaker",
+    // Building
+    "master-crafter",
+    "architect",
+    "builder",
+    // Exploration
+    "explorer",
+    "biome-hunter",
+    "cartographer",
+    // Crafting
+    "tool-master",
+    "iron-age",
+    "diamond-age",
 ];
 
 #[derive(Clone, Debug)]
@@ -568,6 +713,14 @@ pub struct AchievementTracker {
     pub nights_survived: u32,
     pub kills: u32,
     pub crafts: u32,
+    pub blocks_placed: u32,
+    pub ores_mined: u32,
+    pub biomes_visited: u32,
+    pub creeper_kills: u32,
+    pub spider_kills: u32,
+    pub skeleton_kills: u32,
+    pub lowest_health_reached: f32,
+    pub kills_this_night: u32,
 }
 
 impl AchievementTracker {
@@ -577,6 +730,14 @@ impl AchievementTracker {
             nights_survived: 0,
             kills: 0,
             crafts: 0,
+            blocks_placed: 0,
+            ores_mined: 0,
+            biomes_visited: 0,
+            creeper_kills: 0,
+            spider_kills: 0,
+            skeleton_kills: 0,
+            lowest_health_reached: 100.0,
+            kills_this_night: 0,
         }
     }
 
@@ -588,20 +749,10 @@ impl AchievementTracker {
         true
     }
 
-    pub fn record_night_survived(&mut self) -> bool {
-        self.nights_survived += 1;
-        let mut any = false;
-        if self.nights_survived == 1 {
-            any |= self.unlock("first-night");
-        }
-        if self.nights_survived >= 5 {
-            any |= self.unlock("five-nights");
-        }
-        any
-    }
-
-    pub fn record_kill(&mut self) -> bool {
+    pub fn record_kill(&mut self, kind: crate::gameplay::EnemyKind) -> bool {
+        use crate::gameplay::EnemyKind;
         self.kills += 1;
+        self.kills_this_night += 1;
         let mut any = false;
         if self.kills == 1 {
             any |= self.unlock("first-kill");
@@ -609,16 +760,132 @@ impl AchievementTracker {
         if self.kills >= 10 {
             any |= self.unlock("hunter");
         }
+        if self.kills >= 50 {
+            any |= self.unlock("slayer");
+        }
+        if self.kills >= 100 {
+            any |= self.unlock("monster-slayer");
+        }
+        if self.kills_this_night >= 3 {
+            any |= self.unlock("last-stand");
+        }
+        match kind {
+            EnemyKind::Creeper => {
+                self.creeper_kills += 1;
+                if self.creeper_kills >= 1 {
+                    any |= self.unlock("creeper-killer");
+                }
+            }
+            EnemyKind::Spider => {
+                self.spider_kills += 1;
+                if self.spider_kills >= 1 {
+                    any |= self.unlock("spider-slayer");
+                }
+            }
+            EnemyKind::Skeleton => {
+                self.skeleton_kills += 1;
+                if self.skeleton_kills >= 1 {
+                    any |= self.unlock("skeleton-hunter");
+                }
+            }
+            EnemyKind::Zombie => {}
+        }
         any
     }
 
     pub fn record_craft(&mut self) -> bool {
         self.crafts += 1;
-        self.unlock("master-crafter")
+        let mut any = false;
+        if self.crafts == 1 {
+            any |= self.unlock("master-crafter");
+        }
+        if self.crafts >= 10 {
+            any |= self.unlock("architect");
+        }
+        if self.crafts >= 25 {
+            any |= self.unlock("builder");
+        }
+        any
     }
 
     pub fn record_full_health(&mut self) -> bool {
         self.unlock("full-health")
+    }
+
+    pub fn record_near_death(&mut self, current_health: f32) -> bool {
+        let mut any = false;
+        if current_health < self.lowest_health_reached {
+            self.lowest_health_reached = current_health;
+        }
+        if current_health > 0.0 && current_health <= self.max_health() * 0.2 {
+            any |= self.unlock("iron-man");
+        }
+        if current_health <= 0.0 {
+            any |= self.unlock("undying");
+        }
+        any
+    }
+
+    pub fn record_night_survived(&mut self) -> bool {
+        self.nights_survived += 1;
+        self.kills_this_night = 0;
+        let mut any = false;
+        if self.nights_survived == 1 {
+            any |= self.unlock("first-night");
+        }
+        if self.nights_survived >= 5 {
+            any |= self.unlock("five-nights");
+        }
+        if self.nights_survived >= 10 {
+            any |= self.unlock("ten-nights");
+        }
+        any
+    }
+
+    pub fn record_block_placed(&mut self) -> bool {
+        self.blocks_placed += 1;
+        let mut any = false;
+        if self.blocks_placed == 1 {
+            any |= self.unlock("builder");
+        }
+        if self.blocks_placed >= 100 {
+            any |= self.unlock("architect");
+        }
+        any
+    }
+
+    pub fn record_ore_mined(&mut self) -> bool {
+        self.ores_mined += 1;
+        let mut any = false;
+        if self.ores_mined == 1 {
+            any |= self.unlock("first-ore");
+        }
+        if self.ores_mined >= 10 {
+            any |= self.unlock("deep-miner");
+        }
+        if self.ores_mined >= 50 {
+            any |= self.unlock("diamond-hunter");
+        }
+        any
+    }
+
+    pub fn record_exploration(&mut self) -> bool {
+        self.biomes_visited += 1;
+        let mut any = false;
+        if self.biomes_visited == 1 {
+            any |= self.unlock("explorer");
+        }
+        if self.biomes_visited >= 3 {
+            any |= self.unlock("biome-hunter");
+        }
+        if self.biomes_visited >= 6 {
+            any |= self.unlock("cartographer");
+        }
+        any
+    }
+
+    fn max_health(&self) -> f32 {
+        20.0
     }
 }
 
@@ -688,9 +955,9 @@ impl GameSession {
         let events = self.enemies.update(dt, player, night);
         for event in events {
             match event {
-                EnemyEvent::Spawned(id) => {
+                EnemyEvent::Spawned(_, kind) => {
                     fb.messages
-                        .push(format!("☠ Hostile sighted (id {id}) — it's night!"));
+                        .push(format!("☠ {} sighted — it's night!", kind.display_name()));
                 }
                 EnemyEvent::DamagedPlayer(amount) => {
                     let fatal = self.stats.damage(amount);
@@ -702,10 +969,10 @@ impl GameSession {
                         fb.died = true;
                     }
                 }
-                EnemyEvent::Killed(_) => {
-                    if self.achievements.record_kill() {
-                        fb.messages.push("Achievement: first-kill!".to_string());
-                        fb.unlocked_achievements.push("first-kill".to_string());
+                EnemyEvent::Killed(kind) => {
+                    if self.achievements.record_kill(kind) {
+                        fb.messages
+                            .push(format!("Achievement: defeated a {}!", kind.display_name()));
                     }
                 }
             }

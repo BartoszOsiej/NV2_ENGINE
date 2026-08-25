@@ -99,6 +99,34 @@ pub const BLOCK_REGISTRY: &[(u8, &str, &str)] = &[
     (94, "cobble_moss", "mossy_cobblestone"),
     (95, "vine", "vine"),
     (96, "moss_carpet", "moss_carpet"),
+    // ── NV2.2 Expansion ───────────────────────────────────────────────
+    (97, "glass", "glass"),
+    (98, "bricks", "bricks"),
+    (99, "terracotta", "terracotta"),
+    (100, "bookshelf", "bookshelf"),
+    (101, "lantern", "lantern"),
+    (102, "campfire", "campfire"),
+    (103, "barrel", "barrel"),
+    (104, "anvil", "anvil"),
+    (105, "grindstone", "grindstone"),
+    (106, "stonecutter", "stonecutter"),
+    (107, "diamond_axe", "diamond_ore"),
+    (108, "diamond_shovel", "diamond_ore"),
+    (109, "diamond_sword", "diamond_ore"),
+    (110, "netherite_axe", "obsidian"),
+    (111, "netherite_shovel", "obsidian"),
+    (112, "netherite_sword", "obsidian"),
+    (113, "stone_axe", "cobblestone"),
+    (114, "stone_shovel", "cobblestone"),
+    (115, "stone_sword", "cobblestone"),
+    (116, "iron_axe", "iron_ore"),
+    (117, "iron_shovel", "iron_ore"),
+    (118, "iron_sword", "iron_ore"),
+    (119, "gold_ingot", "gold_ore"),
+    (120, "diamond", "diamond_ore"),
+    (121, "emerald", "emerald_ore"),
+    (122, "redstone_dust", "redstone_ore"),
+    (123, "charcoal", "coal_ore"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -202,6 +230,34 @@ pub enum BlockType {
     CobbleMoss = 94,
     Vine = 95,
     MossCarpet = 96,
+    // ── NV2.2 Expansion ───────────────────────────────────────────────
+    Glass = 97,
+    Bricks = 98,
+    Terracotta = 99,
+    Bookshelf = 100,
+    Lantern = 101,
+    Campfire = 102,
+    Barrel = 103,
+    Anvil = 104,
+    Grindstone = 105,
+    Stonecutter = 106,
+    DiamondAxe = 107,
+    DiamondShovel = 108,
+    DiamondSword = 109,
+    NetheriteAxe = 110,
+    NetheriteShovel = 111,
+    NetheriteSword = 112,
+    StoneAxe = 113,
+    StoneShovel = 114,
+    StoneSword = 115,
+    IronAxe = 116,
+    IronShovel = 117,
+    IronSword = 118,
+    GoldIngot = 119,
+    Diamond = 120,
+    Emerald = 121,
+    RedstoneDust = 122,
+    Charcoal = 123,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -425,6 +481,34 @@ impl BlockType {
             BlockType::CobbleMoss => "Mossy Cobblestone",
             BlockType::Vine => "Vine",
             BlockType::MossCarpet => "Moss Carpet",
+            // ── NV2.2 Expansion ───────────────────────────────────────────────
+            BlockType::Glass => "Glass",
+            BlockType::Bricks => "Bricks",
+            BlockType::Terracotta => "Terracotta",
+            BlockType::Bookshelf => "Bookshelf",
+            BlockType::Lantern => "Lantern",
+            BlockType::Campfire => "Campfire",
+            BlockType::Barrel => "Barrel",
+            BlockType::Anvil => "Anvil",
+            BlockType::Grindstone => "Grindstone",
+            BlockType::Stonecutter => "Stonecutter",
+            BlockType::DiamondAxe => "Diamond Axe",
+            BlockType::DiamondShovel => "Diamond Shovel",
+            BlockType::DiamondSword => "Diamond Sword",
+            BlockType::NetheriteAxe => "Netherite Axe",
+            BlockType::NetheriteShovel => "Netherite Shovel",
+            BlockType::NetheriteSword => "Netherite Sword",
+            BlockType::StoneAxe => "Stone Axe",
+            BlockType::StoneShovel => "Stone Shovel",
+            BlockType::StoneSword => "Stone Sword",
+            BlockType::IronAxe => "Iron Axe",
+            BlockType::IronShovel => "Iron Shovel",
+            BlockType::IronSword => "Iron Sword",
+            BlockType::GoldIngot => "Gold Ingot",
+            BlockType::Diamond => "Diamond",
+            BlockType::Emerald => "Emerald",
+            BlockType::RedstoneDust => "Redstone Dust",
+            BlockType::Charcoal => "Charcoal",
         }
     }
 
@@ -541,6 +625,33 @@ impl BlockType {
             94 => Some(BlockType::CobbleMoss),
             95 => Some(BlockType::Vine),
             96 => Some(BlockType::MossCarpet),
+            97 => Some(BlockType::Glass),
+            98 => Some(BlockType::Bricks),
+            99 => Some(BlockType::Terracotta),
+            100 => Some(BlockType::Bookshelf),
+            101 => Some(BlockType::Lantern),
+            102 => Some(BlockType::Campfire),
+            103 => Some(BlockType::Barrel),
+            104 => Some(BlockType::Anvil),
+            105 => Some(BlockType::Grindstone),
+            106 => Some(BlockType::Stonecutter),
+            107 => Some(BlockType::DiamondAxe),
+            108 => Some(BlockType::DiamondShovel),
+            109 => Some(BlockType::DiamondSword),
+            110 => Some(BlockType::NetheriteAxe),
+            111 => Some(BlockType::NetheriteShovel),
+            112 => Some(BlockType::NetheriteSword),
+            113 => Some(BlockType::StoneAxe),
+            114 => Some(BlockType::StoneShovel),
+            115 => Some(BlockType::StoneSword),
+            116 => Some(BlockType::IronAxe),
+            117 => Some(BlockType::IronShovel),
+            118 => Some(BlockType::IronSword),
+            119 => Some(BlockType::GoldIngot),
+            120 => Some(BlockType::Diamond),
+            121 => Some(BlockType::Emerald),
+            122 => Some(BlockType::RedstoneDust),
+            123 => Some(BlockType::Charcoal),
             _ => None,
         }
     }
@@ -575,12 +686,30 @@ impl BlockType {
                 | BlockType::WoodenAxe
                 | BlockType::WoodenShovel
                 | BlockType::WoodenHoe
-                | BlockType::Torch
+                |            BlockType::Torch
                 | BlockType::WorkbenchUpgrade
                 | BlockType::Bush
                 | BlockType::TallGrass
                 | BlockType::Flower
                 | BlockType::DeadBush
+                // ── NV2.2: non-placeable items ──
+                | BlockType::GoldIngot
+                | BlockType::Diamond
+                | BlockType::Emerald
+                | BlockType::RedstoneDust
+                | BlockType::Charcoal
+                | BlockType::DiamondAxe
+                | BlockType::DiamondShovel
+                | BlockType::DiamondSword
+                | BlockType::NetheriteAxe
+                | BlockType::NetheriteShovel
+                | BlockType::NetheriteSword
+                | BlockType::StoneAxe
+                | BlockType::StoneShovel
+                | BlockType::StoneSword
+                | BlockType::IronAxe
+                | BlockType::IronShovel
+                | BlockType::IronSword
         )
     }
 
@@ -612,6 +741,25 @@ impl BlockType {
                 | BlockType::TallGrass
                 | BlockType::Flower
                 | BlockType::DeadBush
+                | BlockType::Glass
+                // ── NV2.2: items ──
+                | BlockType::GoldIngot
+                | BlockType::Diamond
+                | BlockType::Emerald
+                | BlockType::RedstoneDust
+                | BlockType::Charcoal
+                | BlockType::DiamondAxe
+                | BlockType::DiamondShovel
+                | BlockType::DiamondSword
+                | BlockType::NetheriteAxe
+                | BlockType::NetheriteShovel
+                | BlockType::NetheriteSword
+                | BlockType::StoneAxe
+                | BlockType::StoneShovel
+                | BlockType::StoneSword
+                | BlockType::IronAxe
+                | BlockType::IronShovel
+                | BlockType::IronSword
         )
     }
 
@@ -733,11 +881,44 @@ impl BlockType {
             | BlockType::RedstoneOre
             | BlockType::SlateDiamondOre => 5,
             BlockType::Obsidian => 7,
+            // ── NV2.2 blocks ──
+            BlockType::Glass => 1,
+            BlockType::Bricks => 3,
+            BlockType::Terracotta => 3,
+            BlockType::Bookshelf => 2,
+            BlockType::Lantern => 2,
+            BlockType::Campfire => 2,
+            BlockType::Barrel => 3,
+            BlockType::Anvil => 5,
+            BlockType::Grindstone => 3,
+            BlockType::Stonecutter => 3,
+            // ── NV2.2 items ──
             BlockType::FlintPickaxe
             | BlockType::StonePickaxe
             | BlockType::IronPickaxe
             | BlockType::DiamondPickaxe
-            | BlockType::NetheritePickaxe => 0,
+            | BlockType::NetheritePickaxe
+            | BlockType::WoodenPickaxe
+            | BlockType::WoodenAxe
+            | BlockType::WoodenShovel
+            | BlockType::WoodenHoe
+            | BlockType::StoneAxe
+            | BlockType::StoneShovel
+            | BlockType::StoneSword
+            | BlockType::IronAxe
+            | BlockType::IronShovel
+            | BlockType::IronSword
+            | BlockType::DiamondAxe
+            | BlockType::DiamondShovel
+            | BlockType::DiamondSword
+            | BlockType::NetheriteAxe
+            | BlockType::NetheriteShovel
+            | BlockType::NetheriteSword => 0,
+            BlockType::GoldIngot
+            | BlockType::Diamond
+            | BlockType::Emerald
+            | BlockType::RedstoneDust
+            | BlockType::Charcoal => 1,
         }
     }
 
@@ -808,6 +989,67 @@ impl BlockType {
                 speed_multiplier: 2.9,
                 max_durability: 512,
             }),
+            // ── NV2.2: new tools ──
+            BlockType::StoneAxe => Some(ToolStats {
+                tier: ToolTier::Stone,
+                speed_multiplier: 1.8,
+                max_durability: 48,
+            }),
+            BlockType::StoneShovel => Some(ToolStats {
+                tier: ToolTier::Stone,
+                speed_multiplier: 1.7,
+                max_durability: 48,
+            }),
+            BlockType::StoneSword => Some(ToolStats {
+                tier: ToolTier::Stone,
+                speed_multiplier: 1.5,
+                max_durability: 48,
+            }),
+            BlockType::IronAxe => Some(ToolStats {
+                tier: ToolTier::Iron,
+                speed_multiplier: 2.2,
+                max_durability: 96,
+            }),
+            BlockType::IronShovel => Some(ToolStats {
+                tier: ToolTier::Iron,
+                speed_multiplier: 2.0,
+                max_durability: 96,
+            }),
+            BlockType::IronSword => Some(ToolStats {
+                tier: ToolTier::Iron,
+                speed_multiplier: 1.8,
+                max_durability: 96,
+            }),
+            BlockType::DiamondAxe => Some(ToolStats {
+                tier: ToolTier::Diamond,
+                speed_multiplier: 2.6,
+                max_durability: 256,
+            }),
+            BlockType::DiamondShovel => Some(ToolStats {
+                tier: ToolTier::Diamond,
+                speed_multiplier: 2.4,
+                max_durability: 256,
+            }),
+            BlockType::DiamondSword => Some(ToolStats {
+                tier: ToolTier::Diamond,
+                speed_multiplier: 2.2,
+                max_durability: 256,
+            }),
+            BlockType::NetheriteAxe => Some(ToolStats {
+                tier: ToolTier::Netherite,
+                speed_multiplier: 3.0,
+                max_durability: 512,
+            }),
+            BlockType::NetheriteShovel => Some(ToolStats {
+                tier: ToolTier::Netherite,
+                speed_multiplier: 2.8,
+                max_durability: 512,
+            }),
+            BlockType::NetheriteSword => Some(ToolStats {
+                tier: ToolTier::Netherite,
+                speed_multiplier: 2.6,
+                max_durability: 512,
+            }),
             _ => None,
         }
     }
@@ -831,6 +1073,23 @@ impl BlockType {
             | BlockType::IronPickaxe
             | BlockType::DiamondPickaxe
             | BlockType::NetheritePickaxe
+            | BlockType::StoneAxe
+            | BlockType::StoneShovel
+            | BlockType::StoneSword
+            | BlockType::IronAxe
+            | BlockType::IronShovel
+            | BlockType::IronSword
+            | BlockType::DiamondAxe
+            | BlockType::DiamondShovel
+            | BlockType::DiamondSword
+            | BlockType::NetheriteAxe
+            | BlockType::NetheriteShovel
+            | BlockType::NetheriteSword
+            | BlockType::GoldIngot
+            | BlockType::Diamond
+            | BlockType::Emerald
+            | BlockType::RedstoneDust
+            | BlockType::Charcoal
             | BlockType::WorkbenchUpgrade => None,
             BlockType::Planks
             | BlockType::Door
@@ -891,7 +1150,19 @@ impl BlockType {
             | BlockType::StonePickaxe
             | BlockType::IronPickaxe
             | BlockType::DiamondPickaxe
-            | BlockType::NetheritePickaxe => 1,
+            | BlockType::NetheritePickaxe
+            | BlockType::StoneAxe
+            | BlockType::StoneShovel
+            | BlockType::StoneSword
+            | BlockType::IronAxe
+            | BlockType::IronShovel
+            | BlockType::IronSword
+            | BlockType::DiamondAxe
+            | BlockType::DiamondShovel
+            | BlockType::DiamondSword
+            | BlockType::NetheriteAxe
+            | BlockType::NetheriteShovel
+            | BlockType::NetheriteSword => 1,
             _ => 64,
         }
     }
@@ -921,6 +1192,24 @@ impl BlockType {
                 | BlockType::DiamondPickaxe
                 | BlockType::NetheritePickaxe
                 | BlockType::WorkbenchUpgrade
+                // ── NV2.2: items ──
+                | BlockType::GoldIngot
+                | BlockType::Diamond
+                | BlockType::Emerald
+                | BlockType::RedstoneDust
+                | BlockType::Charcoal
+                | BlockType::DiamondAxe
+                | BlockType::DiamondShovel
+                | BlockType::DiamondSword
+                | BlockType::NetheriteAxe
+                | BlockType::NetheriteShovel
+                | BlockType::NetheriteSword
+                | BlockType::StoneAxe
+                | BlockType::StoneShovel
+                | BlockType::StoneSword
+                | BlockType::IronAxe
+                | BlockType::IronShovel
+                | BlockType::IronSword
         )
     }
 
@@ -1152,6 +1441,34 @@ impl BlockType {
             BlockType::CobbleMoss => [tile_cobblestone(); 6],
             BlockType::Vine => [tile_tree_leaves(); 6],
             BlockType::MossCarpet => [tile_moss_block(); 6],
+            // ── NV2.2 Expansion ──────────────────────────────────────────────
+            BlockType::Glass => [tile_water(); 6],
+            BlockType::Bricks => [tile_stone_bricks(); 6],
+            BlockType::Terracotta => [tile_clay(); 6],
+            BlockType::Bookshelf => [tile_oak_planks(); 6],
+            BlockType::Lantern => [tile_glow_rock(); 6],
+            BlockType::Campfire => [tile_glow_rock(); 6],
+            BlockType::Barrel => [tile_oak_planks(); 6],
+            BlockType::Anvil => [tile_stone(); 6],
+            BlockType::Grindstone => [tile_cobblestone(); 6],
+            BlockType::Stonecutter => [tile_stone_bricks(); 6],
+            BlockType::DiamondAxe => [tile_diamond_ore(); 6],
+            BlockType::DiamondShovel => [tile_diamond_ore(); 6],
+            BlockType::DiamondSword => [tile_diamond_ore(); 6],
+            BlockType::NetheriteAxe => [tile_obsidian(); 6],
+            BlockType::NetheriteShovel => [tile_obsidian(); 6],
+            BlockType::NetheriteSword => [tile_obsidian(); 6],
+            BlockType::StoneAxe => [tile_cobblestone(); 6],
+            BlockType::StoneShovel => [tile_cobblestone(); 6],
+            BlockType::StoneSword => [tile_cobblestone(); 6],
+            BlockType::IronAxe => [tile_iron_ore(); 6],
+            BlockType::IronShovel => [tile_iron_ore(); 6],
+            BlockType::IronSword => [tile_iron_ore(); 6],
+            BlockType::GoldIngot => [tile_gold_ore(); 6],
+            BlockType::Diamond => [tile_diamond_ore(); 6],
+            BlockType::Emerald => [tile_emerald_ore(); 6],
+            BlockType::RedstoneDust => [tile_redstone_ore(); 6],
+            BlockType::Charcoal => [tile_coal_ore(); 6],
         }
     }
 }

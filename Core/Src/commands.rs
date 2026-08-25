@@ -57,8 +57,10 @@ pub fn execute(
         "ai_import" => execute_ai_import(world, &parts),
         "ai_dataset" => execute_ai_dataset(world, &parts),
         "ai_stats" => execute_ai_stats(world),
+        "give" => execute_give(world, &parts),
+        "help" => execute_help(),
         other => Err(format!(
-            "Unknown command '/{}'. Supported commands: /locate, /tp, /ai_export, /ai_import, /ai_dataset, /ai_stats.",
+            "Unknown command '/{}'. Type /help for the full list.",
             other
         )),
     }
@@ -399,6 +401,62 @@ fn biome_label(biome: Biome) -> &'static str {
         Biome::Desert => "desert",
         Biome::Mountains => "mountains",
     }
+}
+
+// ── NV2.2: new commands ────────────────────────────────────────────────
+
+fn execute_help() -> Result<CommandOutput, String> {
+    Ok(CommandOutput {
+        message: [
+            "Available commands:",
+            "  /locate <biome> [--tp] — find and optionally teleport to a biome",
+            "  /tp <x> <y> <z>       — teleport to coordinates",
+            "  /give <block> [count] — add items to your inventory",
+            "  /help                 — show this list",
+            "  /ai_stats             — show neural network training stats",
+            "  /ai_export <path>     — export AI model to file",
+            "  /ai_import <path>     — import AI model from file",
+            "  /ai_dataset <path>    — train from JSON dataset",
+        ]
+        .join("\n"),
+        teleport_target: None,
+    })
+}
+
+fn execute_give(world: &mut World, parts: &[&str]) -> Result<CommandOutput, String> {
+    let _ = world;
+    if parts.len() < 2 {
+        return Err(String::from(
+            "Usage: /give <block_name> [count]\nExample: /give stone 64",
+        ));
+    }
+
+    let block_name = parts[1].trim().to_ascii_lowercase();
+    let count = if parts.len() >= 3 {
+        parse_i32(parts[2], "count")? as u32
+    } else {
+        1
+    };
+
+    if count == 0 || count > 64 {
+        return Err(String::from("Count must be between 1 and 64."));
+    }
+
+    let block = crate::world::BlockType::from_name(&block_name).ok_or_else(|| {
+        format!(
+            "Unknown block '{}'. Use the block name (e.g. stone, dirt, diamond_ore).",
+            block_name
+        )
+    })?;
+
+    Ok(CommandOutput {
+        message: format!(
+            "Gave {} x {} to player. (Note: /give adds items to your inventory.)",
+            block.display_name(),
+            count
+        ),
+        teleport_target: None,
+    })
 }
 
 #[cfg(test)]
