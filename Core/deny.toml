@@ -10,11 +10,9 @@ ignore = [
     "RUSTSEC-2026-0105",  # core2 unmaintained (transitive, yanked)
     "RUSTSEC-2024-0436",  # paste unmaintained (transitive)
 ]
-# advisory warnings are non-blocking for transitive deps we can't upgrade
-vulnerability = "warn"
-unmaintained = "warn"
-yanked = "warn"
-unsound = "warn"
+unmaintained = "none"
+yanked = "allow"
+unused-ignored-advisory = "warn"
 
 [licenses]
 allow = [

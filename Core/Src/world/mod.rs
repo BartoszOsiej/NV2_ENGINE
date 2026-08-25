@@ -106,7 +106,7 @@ impl World {
     ///
     /// Tests use this so vegetation outcomes are deterministic regardless of
     /// any `checkpoints/ai_model.json` left behind by a previous run.
-    #[cfg(all(test, not(miri)))]
+    #[cfg(test)]
     pub fn new_for_tests(seed: u32) -> Self {
         let (chunk_gen, gen_receiver) =
             ChunkGenerator::new_with_seed_and_settings(seed, SharedSettings::default());
