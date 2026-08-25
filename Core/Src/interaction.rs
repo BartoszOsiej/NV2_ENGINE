@@ -1145,11 +1145,7 @@ fn block_break_hardness(block: BlockType) -> u8 {
 
 fn active_tool_satisfies_break_gate(block: BlockType, active_stack: Option<&ItemStack>) -> bool {
     let tool_power = held_tool_power(active_stack);
-    if tool_power < block_break_hardness(block) {
-        return false;
-    }
-
-    true
+    tool_power >= block_break_hardness(block)
 }
 
 fn mining_resolution(

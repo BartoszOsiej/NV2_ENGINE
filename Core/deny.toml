@@ -1,0 +1,30 @@
+# cargo-deny configuration — allow common OSS licenses
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0097",  # yanked core2 (transitive, can't upgrade)
+    "RUSTSEC-2026-0204",  # crossbeam-epoch (transitive, no fix available)
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "BSL-1.0",
+    "Unicode-3.0",
+]
+
+[bans]
+multiple-versions = "warn"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
