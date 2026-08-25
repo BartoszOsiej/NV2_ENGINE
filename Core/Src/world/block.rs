@@ -1580,6 +1580,22 @@ mod tests {
                     | BlockType::IronPickaxe
                     | BlockType::DiamondPickaxe
                     | BlockType::NetheritePickaxe
+                    | BlockType::WoodenPickaxe
+                    | BlockType::WoodenAxe
+                    | BlockType::WoodenShovel
+                    | BlockType::WoodenHoe
+                    | BlockType::StoneAxe
+                    | BlockType::StoneShovel
+                    | BlockType::StoneSword
+                    | BlockType::IronAxe
+                    | BlockType::IronShovel
+                    | BlockType::IronSword
+                    | BlockType::DiamondAxe
+                    | BlockType::DiamondShovel
+                    | BlockType::DiamondSword
+                    | BlockType::NetheriteAxe
+                    | BlockType::NetheriteShovel
+                    | BlockType::NetheriteSword
             );
 
             if !zero_hardness_is_intended {
