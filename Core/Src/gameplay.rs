@@ -1176,7 +1176,7 @@ mod tests {
         // night: spawn happens
         let events = mgr.update(1.0, (0.0, 0.0), true);
         assert_eq!(mgr.enemies.len(), 1);
-        assert!(events.iter().any(|e| matches!(e, EnemyEvent::Spawned(_))));
+        assert!(events.iter().any(|e| matches!(e, EnemyEvent::Spawned(..))));
         // enemy chases toward the player
         let e = &mgr.enemies[0];
         let dist_before = (e.x * e.x + e.z * e.z).sqrt();
@@ -1245,8 +1245,8 @@ mod tests {
     #[test]
     fn achievements_unlock_once() {
         let mut a = AchievementTracker::new();
-        assert!(a.record_kill());
-        assert!(!a.record_kill()); // second kill, no new unlock yet
+        assert!(a.record_kill(EnemyKind::Zombie));
+        assert!(!a.record_kill(EnemyKind::Zombie)); // second kill, no new unlock yet
         assert!(a.unlocked.contains(&"first-kill".to_string()));
         // nights: 1 unlocks, 2/3/4 don't, 5 unlocks
         assert!(a.record_night_survived());
