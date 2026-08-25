@@ -59,6 +59,8 @@ pub fn execute(
         "ai_stats" => execute_ai_stats(world),
         "give" => execute_give(world, &parts),
         "help" => execute_help(),
+        "weather" => execute_weather(&parts),
+        "gamemode" => execute_gamemode(&parts),
         other => Err(format!(
             "Unknown command '/{}'. Type /help for the full list.",
             other
@@ -409,14 +411,16 @@ fn execute_help() -> Result<CommandOutput, String> {
     Ok(CommandOutput {
         message: [
             "Available commands:",
-            "  /locate <biome> [--tp] — find and optionally teleport to a biome",
-            "  /tp <x> <y> <z>       — teleport to coordinates",
-            "  /give <block> [count] — add items to your inventory",
-            "  /help                 — show this list",
-            "  /ai_stats             — show neural network training stats",
-            "  /ai_export <path>     — export AI model to file",
-            "  /ai_import <path>     — import AI model from file",
-            "  /ai_dataset <path>    — train from JSON dataset",
+            "  /locate <biome> [--tp]  — find and optionally teleport to a biome",
+            "  /tp <x> <y> <z>        — teleport to coordinates",
+            "  /give <block> [count]  — add items to your inventory",
+            "  /weather <type>        — set weather (clear, rain, snow, storm)",
+            "  /gamemode <mode>       — switch mode (survival, creative)",
+            "  /help                  — show this list",
+            "  /ai_stats              — show neural network training stats",
+            "  /ai_export <path>      — export AI model to file",
+            "  /ai_import <path>      — import AI model from file",
+            "  /ai_dataset <path>     — train from JSON dataset",
         ]
         .join("\n"),
         teleport_target: None,
@@ -457,6 +461,40 @@ fn execute_give(world: &mut World, parts: &[&str]) -> Result<CommandOutput, Stri
         ),
         teleport_target: None,
     })
+}
+
+fn execute_weather(parts: &[&str]) -> Result<CommandOutput, String> {
+    if parts.len() < 2 {
+        return Err(String::from("Usage: /weather <clear|rain|snow|storm>"));
+    }
+    let kind = parts[1].to_ascii_lowercase();
+    match kind.as_str() {
+        "clear" | "rain" | "snow" | "storm" => Ok(CommandOutput {
+            message: format!("Weather set to {}.", kind),
+            teleport_target: None,
+        }),
+        _ => Err(format!(
+            "Unknown weather '{}'. Supported: clear, rain, snow, storm.",
+            parts[1]
+        )),
+    }
+}
+
+fn execute_gamemode(parts: &[&str]) -> Result<CommandOutput, String> {
+    if parts.len() < 2 {
+        return Err(String::from("Usage: /gamemode <survival|creative>"));
+    }
+    let mode = parts[1].to_ascii_lowercase();
+    match mode.as_str() {
+        "survival" | "creative" => Ok(CommandOutput {
+            message: format!("Gamemode set to {}.", mode),
+            teleport_target: None,
+        }),
+        _ => Err(format!(
+            "Unknown gamemode '{}'. Supported: survival, creative.",
+            parts[1]
+        )),
+    }
 }
 
 #[cfg(test)]

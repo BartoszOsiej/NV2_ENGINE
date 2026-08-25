@@ -905,6 +905,149 @@ pub struct SessionFeedback {
     pub unlocked_achievements: Vec<String>,
 }
 
+// ------------------------------------------------------------------ Particle System
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ParticleKind {
+    BlockBreak,
+    CombatHit,
+    EnemyDeath,
+    Dust,
+}
+
+#[derive(Clone, Debug)]
+pub struct Particle {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub vz: f32,
+    pub lifetime: f32,
+    pub age: f32,
+    pub color: [f32; 3],
+    pub size: f32,
+    pub kind: ParticleKind,
+}
+
+pub struct ParticleSystem {
+    pub particles: Vec<Particle>,
+    pub max_particles: usize,
+}
+
+impl ParticleSystem {
+    pub fn new() -> Self {
+        Self {
+            particles: Vec::new(),
+            max_particles: 512,
+        }
+    }
+
+    pub fn emit_block_break(&mut self, x: f32, y: f32, z: f32, color: [f32; 3]) {
+        let count = 8;
+        for i in 0..count {
+            let angle = (i as f32 / count as f32) * std::f32::consts::TAU;
+            let speed = 1.5 + (i as f32 * 0.3);
+            self.particles.push(Particle {
+                x,
+                y: y + 0.5,
+                z,
+                vx: angle.cos() * speed * 0.6,
+                vy: 2.0 + (i as f32 * 0.4),
+                vz: angle.sin() * speed * 0.6,
+                lifetime: 0.6 + (i as f32 * 0.05),
+                age: 0.0,
+                color,
+                size: 0.08 + (i as f32 % 3.0) * 0.02,
+                kind: ParticleKind::BlockBreak,
+            });
+        }
+    }
+
+    pub fn emit_combat_hit(&mut self, x: f32, y: f32, z: f32) {
+        for i in 0..5 {
+            let angle = (i as f32 / 5.0) * std::f32::consts::TAU;
+            self.particles.push(Particle {
+                x,
+                y: y + 0.8,
+                z,
+                vx: angle.cos() * 2.0,
+                vy: 1.0 + (i as f32 * 0.2),
+                vz: angle.sin() * 2.0,
+                lifetime: 0.35,
+                age: 0.0,
+                color: [0.9, 0.2, 0.1], // red
+                size: 0.06,
+                kind: ParticleKind::CombatHit,
+            });
+        }
+    }
+
+    pub fn emit_enemy_death(&mut self, x: f32, y: f32, z: f32, color: [f32; 3]) {
+        for i in 0..12 {
+            let angle = (i as f32 / 12.0) * std::f32::consts::TAU;
+            let speed = 2.0 + (i as f32 * 0.3);
+            self.particles.push(Particle {
+                x,
+                y: y + 0.5,
+                z,
+                vx: angle.cos() * speed,
+                vy: 2.5 + (i as f32 * 0.3),
+                vz: angle.sin() * speed,
+                lifetime: 0.8,
+                age: 0.0,
+                color,
+                size: 0.1,
+                kind: ParticleKind::EnemyDeath,
+            });
+        }
+    }
+
+    pub fn emit_dust(&mut self, x: f32, y: f32, z: f32) {
+        for i in 0..3 {
+            self.particles.push(Particle {
+                x: x + (i as f32 - 1.0) * 0.3,
+                y,
+                z: z + ((i * 7) as f32 * 0.2),
+                vx: (i as f32 - 1.0) * 0.5,
+                vy: 0.8,
+                vz: ((i * 3) as f32 - 1.0) * 0.3,
+                lifetime: 0.4,
+                age: 0.0,
+                color: [0.7, 0.65, 0.5],
+                size: 0.04,
+                kind: ParticleKind::Dust,
+            });
+        }
+    }
+
+    /// Advance all particles. Remove dead ones.
+    pub fn update(&mut self, dt: f32) {
+        for p in &mut self.particles {
+            p.age += dt;
+            p.vy -= 6.0 * dt; // gravity
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.z += p.vz * dt;
+            // friction
+            p.vx *= 0.96;
+            p.vz *= 0.96;
+        }
+        self.particles.retain(|p| p.age < p.lifetime);
+        // cap particle count
+        if self.particles.len() > self.max_particles {
+            let excess = self.particles.len() - self.max_particles;
+            self.particles.drain(0..excess);
+        }
+    }
+}
+
+impl Default for ParticleSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ------------------------------------------------------------------ GameSession
 pub struct GameSession {
     pub clock: GameClock,
     pub stats: PlayerStats,
@@ -912,6 +1055,7 @@ pub struct GameSession {
     pub animals: AnimalManager,
     pub wear: ToolWear,
     pub achievements: AchievementTracker,
+    pub particles: ParticleSystem,
     /// Tracked so night→morning transitions count exactly once.
     prev_night: bool,
 }
@@ -925,6 +1069,7 @@ impl GameSession {
             animals: AnimalManager::new(),
             wear: ToolWear::new(64),
             achievements: AchievementTracker::new(),
+            particles: ParticleSystem::new(),
             prev_night: false,
         }
     }
@@ -961,6 +1106,7 @@ impl GameSession {
                 }
                 EnemyEvent::DamagedPlayer(amount) => {
                     let fatal = self.stats.damage(amount);
+                    self.particles.emit_combat_hit(player.0, 1.0, player.1);
                     fb.messages.push(format!(
                         "☠ Took {amount:.0} damage (hp {:.0})",
                         self.stats.health
@@ -970,6 +1116,8 @@ impl GameSession {
                     }
                 }
                 EnemyEvent::Killed(kind) => {
+                    self.particles
+                        .emit_enemy_death(player.0, 1.0, player.1, kind.color());
                     if self.achievements.record_kill(kind) {
                         fb.messages
                             .push(format!("Achievement: defeated a {}!", kind.display_name()));
@@ -983,6 +1131,7 @@ impl GameSession {
             fb.messages.push("Achievement: full-health!".to_string());
             fb.unlocked_achievements.push("full-health".to_string());
         }
+        self.particles.update(dt);
         fb
     }
 

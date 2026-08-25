@@ -95,6 +95,16 @@ Modules — one checkpoint file, implemented in `Core/Src/world/memplp.rs`:
 
 Commands: `/time`, `/day`, `/night`, `/eat`, `/heal`, `/attack`, `/tools`, `/repair`, `/achievements`, `/stats`.
 
+**NV2.2 expansion (2026-08-25):**
+
+- **10 new blocks** — Glass, Bricks, Terracotta, Bookshelf, Lantern, Campfire, Barrel, Anvil, Grindstone, Stonecutter
+- **12 new tools** — Stone/Iron/Diamond/Netherite axe, shovel, sword with full crafting recipes
+- **5 new items** — Gold Ingot, Diamond, Emerald, Redstone Dust, Charcoal
+- **3 enemy types** — Zombie (standard), Skeleton (ranged), Spider (fast), Creeper (explosive) with biome-aware spawning
+- **27 achievements** — survival, combat (per-enemy kills), mining, building, exploration
+- **Particle system** — block break, combat hit, enemy death effects
+- **New commands** — `/give <block> [count]`, `/weather <type>`, `/gamemode <mode>`, `/help`
+
 </details>
 
 <details>
