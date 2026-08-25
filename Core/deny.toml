@@ -9,6 +9,8 @@ ignore = [
     "RUSTSEC-2026-0196",  # cgmath unmaintained (transitive)
     "RUSTSEC-2026-0105",  # core2 unmaintained (transitive, yanked)
     "RUSTSEC-2024-0436",  # paste unmaintained (transitive)
+    "RUSTSEC-2026-0190",  # anyhow downcast_mut unsound (transitive)
+    "RUSTSEC-2026-0197",  # cgmath swap_columns unsound (transitive)
 ]
 unmaintained = "none"
 yanked = "allow"

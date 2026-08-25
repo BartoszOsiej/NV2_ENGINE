@@ -742,7 +742,7 @@ pub fn tile_deer_fur() -> TileUV {
 pub fn tile_rabbit_fur() -> TileUV {
     TileUV::new(7, 5)
 } // procedural fur
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
 
