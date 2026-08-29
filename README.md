@@ -166,7 +166,7 @@ NV2_ENGINE/
 
 <div align="center">
 
-**Part of [BartoszOsiej](https://github.com/BartoszOsiej)'s systems toolkit** · [`halcyon`](https://github.com/BartoszOsiej/halcyon-process-monitor) · [`externum`](https://github.com/BartoszOsiej/externum) · [`AURORA-OS`](https://github.com/BartoszOsiej/AURORA-OS)
+**Part of [BartoszOsiej](https://github.com/BartoszOsiej)'s systems toolkit** · [`halcyon`](https://github.com/BartoszOsiej/talus-process-monitor) · [`externum`](https://github.com/BartoszOsiej/externum) · [`AURORA-OS`](https://github.com/BartoszOsiej/Aurora)
 
 MIT © 2026 Bartosz Osiej
 
