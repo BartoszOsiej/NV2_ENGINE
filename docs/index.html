@@ -104,8 +104,9 @@ footer a{color:var(--accent);text-decoration:none}
   .grid3{grid-template-columns:1fr}
 }
 </style>
+<link rel="stylesheet" href="https://bartoszosiej.github.io/css/aegis.css">
 </head>
-<body>
+<body data-page="nv2">
 
 <!-- Stars -->
 <div class="stars" id="stars"></div>
@@ -276,5 +277,6 @@ for(let i=0;i<80;i++){const s=document.createElement('div');s.className='star';s
 const observer=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')})},{threshold:.1});
 document.querySelectorAll('.reveal').forEach(el=>observer.observe(el));
 </script>
+<script defer src="https://bartoszosiej.github.io/js/aegis-chrome.js"></script>
 </body>
 </html>
