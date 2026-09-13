@@ -110,24 +110,40 @@ footer a{color:var(--accent);text-decoration:none}
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Bartosz Osiej">
 <meta property="og:title" content="NV2_ENGINE — Neural voxel engine (Rust, wgpu)">
-<meta property="og:description" content="Neural voxel engine with MLP terrain generation, multiplayer over TCP, Epic Games Store integration. Published as a crate.">
+<meta property="og:description" content="Voxel survival engine in Rust (wgpu): NASA POWER real-climate worlds, embedded MeMLP neural network, day/night survival. EGS submission kit ready.">
 <meta property="og:url" content="https://bartoszosiej.github.io/NV2_ENGINE/">
 <meta property="og:image" content="https://bartoszosiej.github.io/img/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "@id": "https://bartoszosiej.github.io/NV2_ENGINE/#software",
-  "name": "NV2_ENGINE",
-  "applicationCategory": "GameApplication",
-  "applicationSubCategory": "Voxel engine with MLP neural renderer",
-  "operatingSystem": "Cross-platform",
-  "programmingLanguage": ["Rust"],
-  "codeRepository": "https://github.com/BartoszOsiej/NV2_ENGINE",
-  "author": { "@id": "https://bartoszosiej.github.io/#person" },
-  "description": "Neural voxel engine with MLP terrain generation, multiplayer over TCP, Epic Games Store integration. Published as a crate.",
-  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://bartoszosiej.github.io/NV2_ENGINE/#software",
+      "name": "NV2_ENGINE",
+      "applicationCategory": "GameApplication",
+      "applicationSubCategory": "Voxel survival game engine with real-climate world generation",
+      "operatingSystem": "Cross-platform",
+      "programmingLanguage": ["Rust"],
+      "codeRepository": "https://github.com/BartoszOsiej/NV2_ENGINE",
+      "author": { "@id": "https://bartoszosiej.github.io/#person" },
+      "description": "Voxel survival engine in Rust (wgpu): NASA POWER real-climate worlds, embedded MeMLP neural network, day/night survival. EGS submission kit ready.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+      "@type": "VideoGame",
+      "@id": "https://bartoszosiej.github.io/NV2_ENGINE/#game",
+      "name": "VIVIA: Beyond the Known (NV-2.0)",
+      "author": { "@id": "https://bartoszosiej.github.io/#person" },
+      "publisher": { "@type": "Organization", "name": "Terra Nova Gameworks" },
+      "genre": ["Survival", "Sandbox", "Voxel"],
+      "gamePlatform": ["Windows", "Linux"],
+      "programmingLanguage": ["Rust"],
+      "description": "Voxel survival sandbox where every seed maps to a real location on Earth — NASA POWER climate data drives biomes, weather and sky. An embedded MeMLP network learns vegetation, biome and texture decisions while you play.",
+      "url": "https://bartoszosiej.github.io/NV2_ENGINE/"
+    }
+  ]
 }
 </script>
 </head>
@@ -145,10 +161,9 @@ footer a{color:var(--accent);text-decoration:none}
 <div class="container">
   <div class="hero-badge"><span class="dot"></span> WGPU + RUST</div>
   <h1><span class="gradient">VIVIA</span></h1>
-  <p class="subtitle">Neural voxel engine with MLP terrain generation, multiplayer over TCP, and GPU-driven wgpu rendering. Written in Rust.</p>
+  <p class="subtitle">Voxel survival engine with real-world NASA climate data and an embedded MeMLP neural network. Rust + wgpu.</p>
   <div class="hero-actions">
-    <a href="https://crates.io/crates/nv2_engine" class="btn btn-primary">📦 crates.io</a>
-    <a href="https://github.com/BartoszOsiej/NV2_ENGINE" class="btn btn-secondary">⭐ GitHub</a>
+    <a href="https://github.com/BartoszOsiej/NV2_ENGINE" class="btn btn-primary">⭐ GitHub</a>
     <a href="https://github.com/BartoszOsiej/NV2_ENGINE/releases" class="btn btn-secondary">⬇ Releases</a>
   </div>
 </div>
@@ -165,17 +180,14 @@ footer a{color:var(--accent);text-decoration:none}
       <span class="terminal-title">vivia — neural voxel engine</span>
     </div>
     <div class="terminal-body">
-      <div><span class="prompt">$</span> <span class="cmd">cargo install nv2_engine</span></div>
-      <div class="out">   Compiling nv2_engine v0.4.1</div>
-      <div class="out">   Release build optimized (LTO, strip)</div>
-      <div><span class="prompt">$</span> <span class="cmd">nv2_engine --version</span></div>
-      <div><span class="ok">viv</span><span class="out">ia v0.4.1 (wgpu neural renderer)</span></div>
-      <div><span class="prompt">$</span> <span class="cmd">nv2_engine serve --multiplayer</span></div>
-      <div class="out">   Listening on 0.0.0.0:7878</div>
-      <div class="out">   MLP terrain generator: <span class="ok">loaded</span></div>
-      <div class="out">   wgpu adapter: <span class="ok">NVIDIA RTX</span></div>
-      <div class="out">   Players connected: <span class="warn">0 → 1 → 2</span></div>
-      <div><span class="prompt">$</span> <span class="cmd"># Voxel world · neural terrain · multiplayer</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">git clone https://github.com/BartoszOsiej/NV2_ENGINE && cd NV2_ENGINE/Core</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">cargo run --release</span></div>
+      <div class="out">   Compiling nv2_engine v0.1.0</div>
+      <div class="out">   Release build optimized</div>
+      <div class="out">   wgpu adapter: <span class="ok">initialized</span></div>
+      <div class="out">   [climate] embedded NASA POWER grid ready — 9 biomes</div>
+      <div class="out">   [ai] MeMLP ready: vegetation / biome / texture heads</div>
+      <div><span class="prompt">$</span> <span class="cmd"># voxel survival · real climate · neural terrain</span></div>
     </div>
   </div>
 </div>
@@ -189,8 +201,8 @@ footer a{color:var(--accent);text-decoration:none}
   <div class="grid3">
     <div class="card reveal">
       <div class="card-icon">🧠</div>
-      <h3>MLP Neural Renderer</h3>
-      <p>Procedural terrain generated by a trained neural network. No hand-crafted heightmaps — the MLP learns terrain patterns and generates infinite worlds on the GPU.</p>
+      <h3>MeMLP Neural Terrain</h3>
+      <p>An embedded neural network (ndarray, pure CPU) learns vegetation placement, biome classification and texture styles while you play — trained online in a background thread, checkpointed as ~14 KB JSON.</p>
       <span class="tag">Machine Learning</span>
     </div>
     <div class="card reveal">
@@ -201,9 +213,9 @@ footer a{color:var(--accent);text-decoration:none}
     </div>
     <div class="card reveal">
       <div class="card-icon">🌐</div>
-      <h3>Multiplayer TCP</h3>
-      <p>Real-time multiplayer over raw TCP sockets. Player sync, world state replication, entity interpolation. No game server framework — hand-rolled networking.</p>
-      <span class="tag">Networking</span>
+      <h3>Real-Climate Worlds</h3>
+      <p>Every seed maps to a real location on Earth. NASA POWER climatology drives biomes, weather and sky; Open-Meteo feeds the online trainer. Offline fallback keeps worlds fully playable.</p>
+      <span class="tag">NASA POWER</span>
     </div>
     <div class="card reveal">
       <div class="card-icon">🎮</div>
@@ -213,8 +225,8 @@ footer a{color:var(--accent);text-decoration:none}
     </div>
     <div class="card reveal">
       <div class="card-icon">📦</div>
-      <h3>crates.io + GHCR</h3>
-      <p>Published as <code>nv2_engine</code> on crates.io. Docker images on GHCR. Cross-platform releases (Linux, macOS, Windows).</p>
+      <h3>MIT + Releases</h3>
+      <p>MIT-licensed engine. Portable Linux &amp; Windows builds on GitHub Releases. Docker images on GHCR.</p>
       <span class="tag">Distribution</span>
     </div>
     <div class="card reveal">
@@ -235,11 +247,11 @@ footer a{color:var(--accent);text-decoration:none}
   <div class="arch-flow reveal">
     <div class="arch-node"><div class="label">Input</div><div class="value">SDL / Events</div></div>
     <div class="arch-arrow">→</div>
-    <div class="arch-node"><div class="label">Game Logic</div><div class="value">ECS + State</div></div>
+    <div class="arch-node"><div class="label">Game Logic</div><div class="value">Loop + State</div></div>
     <div class="arch-arrow">→</div>
-    <div class="arch-node"><div class="label">Terrain</div><div class="value">MLP Neural</div></div>
+    <div class="arch-node"><div class="label">Terrain</div><div class="value">OpenSimplex2 + MeMLP</div></div>
     <div class="arch-arrow">→</div>
-    <div class="arch-node"><div class="label">Meshing</div><div class="value">Greedy Voxels</div></div>
+    <div class="arch-node"><div class="label">Meshing</div><div class="value">Chunk Voxels</div></div>
     <div class="arch-arrow">→</div>
     <div class="arch-node"><div class="label">GPU</div><div class="value">wgpu Render</div></div>
   </div>
@@ -254,7 +266,7 @@ footer a{color:var(--accent);text-decoration:none}
     <div class="stat"><div class="num">0%</div><div class="label">GC pauses (Rust)</div></div>
     <div class="stat"><div class="num">60+</div><div class="label">FPS target</div></div>
     <div class="stat"><div class="num">100%</div><div class="label">Custom engine</div></div>
-    <div class="stat"><div class="num">3</div><div class="label">Platforms</div></div>
+    <div class="stat"><div class="num">2</div><div class="label">Platforms (Win/Linux)</div></div>
     <div class="stat"><div class="num">∞</div><div class="label">Neural terrain</div></div>
   </div>
 </div>
@@ -272,10 +284,10 @@ footer a{color:var(--accent);text-decoration:none}
       <span class="terminal-title">install</span>
     </div>
     <div class="terminal-body">
-      <div><span class="prompt"># From crates.io</span></div>
-      <div><span class="prompt">$</span> <span class="cmd">cargo install nv2_engine</span></div>
-      <div><span class="prompt">$</span> <span class="cmd">nv2_engine</span></div>
-      <div class="ok">   ▸ VIVIA v0.4.1 starting...</div>
+      <div><span class="prompt"># From source</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">git clone https://github.com/BartoszOsiej/NV2_ENGINE</span></div>
+      <div><span class="prompt">$</span> <span class="cmd">cd NV2_ENGINE/Core && cargo run --release</span></div>
+      <div class="ok">   ▸ VIVIA v0.1.0 starting...</div>
       <div class="ok">   ▸ Neural terrain: loaded</div>
       <div class="ok">   ▸ wgpu renderer: initialized</div>
       <div><span class="prompt"># Or from Docker</span></div>
@@ -289,7 +301,7 @@ footer a{color:var(--accent);text-decoration:none}
 <footer>
 <div class="container">
   <p style="margin-bottom:8px">Built with 🦀 Rust · wgpu · MLP neural networks</p>
-  <p><a href="https://github.com/BartoszOsiej/NV2_ENGINE">GitHub</a> · <a href="https://crates.io/crates/nv2_engine">crates.io</a> · <a href="https://github.com/BartoszOsiej">Bartosz Osiej</a></p>
+  <p><a href="https://github.com/BartoszOsiej/NV2_ENGINE">GitHub</a> · <a href="https://bartoszosiej.github.io/Portfolio/projects/vivia/">VIVIA docs</a> · <a href="https://github.com/BartoszOsiej">Bartosz Osiej</a></p>
 </div>
 </footer>
 
