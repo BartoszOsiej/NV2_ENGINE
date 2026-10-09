@@ -38,7 +38,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
       - name: Install cosign
-        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb
       - name: Sign image (keyless, Fulcio OIDC)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
