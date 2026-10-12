@@ -5,6 +5,7 @@ minut = "minut"
 PN = "PN"
 sie = "sie"
 nd = "nd"
+INE = "INE"
 
 [files]
 extend-exclude = ["QUICKSTART.pl.md", "README.pl.md", "CONTRIBUTING.md"]
